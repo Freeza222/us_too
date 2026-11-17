@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nous deux</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; background: #fff7f8; color: #222; }
+  h1 { color: #d6336c; }
+  .card { background: #fff; padding: 1rem; border-radius: .75rem; margin: 1rem 0; box-shadow: 0 1px 4px #0002; }
+  textarea, input { width: 100%; box-sizing: border-box; padding: .6rem; font: inherit; border: 1px solid #ccc; border-radius: .5rem; }
+  button { margin-top: .5rem; padding: .6rem 1rem; font: inherit; border: 0; border-radius: .5rem; background: #d6336c; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; }
+  .code { font-size: 2rem; letter-spacing: .3rem; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Nous deux </h1>
+<main id="app">Chargement…</main>
+
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+// Supabase > Project Settings > API (la clé "anon" est publique, c'est normal)
+const SUPABASE_URL = 'https://njvatmicnmekplpkvppd.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_1A5R-PFEg8rN8lc5junI7Q_bbCIEbBB';
+
+const QUESTIONS = [
+  "Quel est ton meilleur souvenir avec moi ?",
+  "Qu'est-ce qui t'a fait sourire aujourd'hui ?",
+  "Où aimerais-tu qu'on parte en voyage ensemble ?",
+  "Quelle petite chose je fais qui te fait plaisir ?",
+  "Quel est ton plat préféré que je cuisine (ou devrais cuisiner) ?",
+  "Qu'est-ce que tu as pensé la première fois que tu m'as vu·e ?",
+  "Quelle chanson te fait penser à nous ?",
+  "Quel rêve aimerais-tu réaliser dans les 5 prochaines années ?",
+  "De quoi es-tu fier·e cette semaine ?",
+  "Quel serait notre rendez-vous parfait ?",
+  "Qu'est-ce qui te stresse en ce moment ?",
+  "Quelle habitude aimerais-tu qu'on prenne ensemble ?",
+  "Quel film devrait-on regarder ensemble ?",
+  "Qu'est-ce que tu préfères dans notre relation ?",
+  "Si on gagnait au loto demain, on fait quoi ?",
+  "Quel moment de ton enfance te rend nostalgique ?",
+  "Qu'est-ce que je pourrais faire pour t'aider cette semaine ?",
+  "Quelle est la chose la plus drôle qu'on ait vécue ensemble ?",
+  "Quelle qualité admires-tu chez moi ?",
+  "Comment imagines-tu notre vie dans 10 ans ?",
+  "Quel petit plaisir t'a manqué récemment ?",
+  "Quelle est ta saison préférée et pourquoi ?",
+  "Qu'est-ce que tu aimerais apprendre ?",
+  "Quel compliment aimerais-tu entendre plus souvent ?",
+  "Quel endroit te fait te sentir chez toi ?",
+  "Quelle est ta plus grande peur ?",
+  "Quel serait ton week-end idéal ?",
+  "Qu'est-ce qui te rend heureux·se en ce moment ?",
+  "Quelle tradition aimerais-tu qu'on crée tous les deux ?",
+  "Qu'est-ce que tu voudrais me dire mais n'as jamais osé ?",
+];
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const app = document.getElementById('app');
+
+// Mini helper DOM : les strings deviennent des text nodes → pas d'injection HTML
+const h = (tag, props = {}, ...kids) => { const el = Object.assign(document.createElement(tag), props); el.append(...kids); return el; };
+const show = (...els) => app.replaceChildren(...els);
+const card = (...kids) => h('div', { className: 'card' }, ...kids);
+const fail = (e) => show(card(h('p', {}, 'Erreur : ' + e.message), btn('Réessayer', main)));
+const btn = (label, fn) => h('button', { onclick: async (e) => {
+  e.target.disabled = true;
+  try { await fn(); } finally { e.target.disabled = false; }
+} }, label);
+
+async function main() {
+  // ponytail: compte anonyme lié au navigateur (vider les données = perdre le couple). Passer à l'email OTP si besoin.
+  const { data: { session } } = await sb.auth.getSession();
+    let user = session?.user;
+  if (!user) {
+    const { data, error } = await sb.auth.signInAnonymously();
+    if (error) return fail(error);
+    user = data.user;
+  }
+
+  const { data: couples, error } = await sb.from('couples').select('*').limit(1);
+  if (error) return fail(error);
+  const couple = couples[0];
+
+  if (!couple) return showPairing(user.id);
+  if (!couple.b) return show(card(
+    h('p', {}, 'Envoie ce code à ton/ta partenaire :'),
+    h('p', { className: 'code' }, couple.code),
+    btn('Actualiser', main),
+  ));
+  showToday(couple, user.id);
+}
+
+function showPairing(me) {
+  const input = h('input', { placeholder: 'Code à 6 caractères', maxLength: 6 });
+  show(
+    card(h('p', {}, 'Crée votre couple et partage le code…'), btn('Créer un code', async () => {
+      const { error } = await sb.from('couples').insert({ a: me });
+      error ? alert(error.message) : main();
+    })),
+    card(h('p', {}, '…ou rejoins avec le code reçu :'), input, btn('Rejoindre', async () => {
+      const { data, error } = await sb.rpc('join_couple', { c: input.value.trim() });
+      if (error || !data) return alert(error?.message ?? 'Code invalide ou déjà utilisé');
+      main();
+    })),
+  );
+}
+
+async function showToday(couple, me) {
+  const today = new Date().toISOString().slice(0, 10); // UTC, comme current_date côté Supabase
+  const question = QUESTIONS[Math.floor(Date.parse(today) / 86400000) % QUESTIONS.length];
+
+  const { data: answers, error } = await sb.from('answers')
+    .select('user_id, text').eq('couple_id', couple.id).eq('day', today);
+  if (error) return fail(error);
+
+  const mine = answers.find((a) => a.user_id === me);
+  const theirs = answers.find((a) => a.user_id !== me);
+  const q = h('p', {}, h('strong', {}, question));
+
+  if (!mine) {
+    const ta = h('textarea', { rows: 4, placeholder: 'Ta réponse…', maxLength: 2000 });
+    return show(card(q, ta, btn('Envoyer', async () => {
+      if (!ta.value.trim()) return;
+      const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
+      error ? alert(error.message) : main();
+    })));
+  }
+
+  show(card(
+    q,
+    h('p', {}, h('strong', {}, 'Toi : '), mine.text),
+    h('p', {}, h('strong', {}, 'Ton/ta partenaire : '), theirs ? theirs.text : 'pas encore répondu…'),
+    btn('Actualiser', main),
+  ));
+}
+
+main().catch(fail);
+</script>
+</body>
+</html>
