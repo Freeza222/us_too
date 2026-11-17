@@ -1,4 +1,4 @@
-# Nous deux 💞
+# Nous deux
 
 Une question par jour pour un couple. Chacun répond, et on ne voit la réponse de l'autre qu'après avoir répondu soi-même.
 Pas de serveur : un fichier HTML statique + Supabase (gratuit).
