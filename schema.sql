@@ -48,3 +48,7 @@ create policy "répondre aujourd'hui" on answers for insert with check (
   and day = current_date
   and couple_id in (select id from couples where auth.uid() in (a, b))
 );
+
+-- Temps réel : le flux INSERT de answers est diffusé au channel du couple.
+-- La RLS ci-dessus s'applique aussi à Realtime, donc rien ne fuite avant dévoilement.
+alter publication supabase_realtime add table answers;

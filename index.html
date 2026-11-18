@@ -79,6 +79,15 @@
   .bubble.locked { background: none; border: 2px dashed var(--muted); color: var(--muted); border-bottom-left-radius: .35rem; }
   .both { margin: 1.25rem 0 0; text-align: center; font-weight: 600; color: var(--rose); }
 
+  .toast {
+    position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%);
+    max-width: calc(100vw - 2.5rem); padding: .8rem 1.1rem; font-weight: 600;
+    background: var(--card); backdrop-filter: blur(12px); color: var(--text);
+    border-radius: 1rem; box-shadow: 0 10px 30px -12px #e6498040, 0 1px 0 #ffffff80 inset;
+    animation: toast-up .35s ease-out both; z-index: 2; white-space: pre-wrap;
+  }
+
+  @keyframes toast-up { from { opacity: 0; transform: translate(-50%, 10px); } }
   @keyframes up { from { opacity: 0; transform: translateY(10px); } }
   @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.18); } 30% { transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -146,6 +155,63 @@ const share = (code) => navigator.share
   ? navigator.share({ text: `Rejoins-moi sur Nous deux 💞 Code : ${code}\n${location.href}` }).catch(() => {})
   : navigator.clipboard.writeText(code).then(() => alert('Code copié !'));
 
+// Temps réel + alertes : un canal par couple, activé une fois appariés (voir listen())
+let channel = null;   // canal Supabase Realtime
+let current = null;   // état de la vue du jour { couple, user }, pour rafraîchir sans recharger
+let flashTimer = null;
+
+// Même formule que la question du jour, réutilisée pour les souvenirs
+const questionFor = (day) => QUESTIONS[Math.floor(Date.parse(day) / 86400000) % QUESTIONS.length];
+
+const toast = (msg) => {
+  const t = h('div', { className: 'toast', role: 'status' }, msg);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 4200);
+};
+
+// Prévenir même quand l'app est en fond : Notification si permission, sinon titre qui clignote
+const alertes = (msg) => {
+  navigator.vibrate?.([80, 40, 80]);
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+    new Notification('Nous deux 💞', { body: msg });
+  } else {
+    toast(msg);
+    if (document.hidden) flashTitle();
+  }
+};
+const flashTitle = () => {
+  if (flashTimer) return;
+  let i = 0;
+  flashTimer = setInterval(() => {
+    document.title = (i++ % 2) ? '💞 Une réponse t\u2019attend' : 'Nous deux';
+    if (i > 8) { clearInterval(flashTimer); flashTimer = null; document.title = 'Nous deux'; }
+  }, 900);
+};
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && flashTimer) { clearInterval(flashTimer); flashTimer = null; document.title = 'Nous deux'; }
+});
+
+function listen(couple, user) {
+  if (channel) return;
+  channel = sb.channel(`nous-deux-${couple.id}`)
+    // Ton/ta partenaire pense à toi : bulle instantanée
+    .on('broadcast', { event: 'nudge' }, () => alertes('Ton/ta partenaire pense à toi 💭'))
+    // Le partenaire vient de répondre (RLS me masque encore sa réponse) : c'est mon tour
+    .on('broadcast', { event: 'answered' }, () => {
+      const ta = app.querySelector('textarea');
+      if (document.activeElement === ta) return toast('Ton/ta partenaire a répondu 💞 Tu verras la mise à jour après l\u2019envoi');
+      alertes('C\u2019est ton tour ! Ton/ta partenaire a répondu 💞');
+      if (current) showToday(current.couple, current.user);
+    })
+    // Nouvelle réponse que je peux voir (j'ai répondu en premier) : dévoilement en direct
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'answers', filter: `couple_id=eq.${couple.id}` }, (payload) => {
+      if (payload.new.user_id === user.id) return;
+      if (document.hidden) alertes('Vos réponses du jour se sont dévoilées 💞');
+      if (current) showToday(current.couple, current.user);
+    })
+    .subscribe();
+}
+
 async function main() {
   // ponytail: compte anonyme lié au navigateur (vider les données = perdre le couple). Passer à l'email OTP si besoin.
   const { data: { session } } = await sb.auth.getSession();
@@ -168,7 +234,8 @@ async function main() {
     btn('Partager le code', () => share(couple.code)),
     btn('J\'ai envoyé, actualiser', main, 'ghost'),
   ));
-  showToday(couple, user.id);
+  listen(couple, user);
+  showToday(couple, user);
 }
 
 function showPairing(me) {
@@ -195,9 +262,11 @@ function showPairing(me) {
   );
 }
 
-async function showToday(couple, me) {
+async function showToday(couple, user) {
+  current = { couple, user };
+  const me = user.id;
   const today = new Date().toISOString().slice(0, 10); // UTC, comme current_date côté Supabase
-  const question = QUESTIONS[Math.floor(Date.parse(today) / 86400000) % QUESTIONS.length];
+  const question = questionFor(today);
   const dateLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const { data: answers, error } = await sb.from('answers')
@@ -208,30 +277,101 @@ async function showToday(couple, me) {
   const theirs = answers.find((a) => a.user_id !== me);
   const head = [h('p', { className: 'eyebrow' }, dateLabel), h('p', { className: 'question' }, question)];
 
-  if (!mine) {
-    const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
-    return show(card(
-      ...head, ta,
-      btn('Envoyer 💌', async () => {
-        if (!ta.value.trim()) return ta.focus();
-        const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
-        error ? alert(error.message) : main();
+  const nudge = btn('Je pense à toi 💭', async () => {
+    if (!channel) return toast('Recharge la page pour activer le temps réel');
+    await channel.send({ type: 'broadcast', event: 'nudge', payload: { from: me } });
+    toast('Envoyé 💞');
+  }, 'ghost');
+  const notifs = btn('Activer les notifications', async () => {
+    if (!('Notification' in window)) return toast('Notifications non supportées par ce navigateur');
+    const p = await Notification.requestPermission();
+    toast(p === 'granted' ? 'Notifications activées 💞' : 'Notifications refusées');
+  }, 'ghost');
+  const souvenirs = btn('Nos souvenirs', () => { current = null; showHistory(couple, user); }, 'ghost');
+
+  // Un compte anonyme vit dans le navigateur : proposer un email pour sauver les réponses
+  let emailCard = null;
+  if (user.is_anonymous) {
+    const emailInput = h('input', { type: 'email', placeholder: 'ton@email.fr', autocomplete: 'email', ariaLabel: 'Ton email' });
+    emailCard = card(
+      h('p', { className: 'eyebrow' }, 'Sécuriser vos souvenirs'),
+      h('p', { className: 'hint' }, 'Ton compte est lié à ce navigateur : si ses données sont vidées, vos réponses partent avec. Ajoute un email pour les retrouver.'),
+      emailInput,
+      btn('Lier mon email', async () => {
+        if (!emailInput.value.trim()) return emailInput.focus();
+        const { error } = await sb.auth.updateUser({ email: emailInput.value.trim() });
+        if (error) return alert(error.message);
+        alert('Vérifie ta boîte mail pour confirmer 💞');
       }),
-      h('p', { className: 'label' }, 'Ton/ta partenaire'),
-      h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
-    ));
+    );
   }
 
-  show(card(
-    ...head,
-    h('p', { className: 'label me' }, 'Toi'),
-    h('div', { className: 'bubble mine' }, mine.text),
-    h('p', { className: 'label' }, 'Ton/ta partenaire'),
-    theirs
-      ? h('div', { className: 'bubble theirs' }, theirs.text)
-      : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
-    theirs ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞') : btn('Actualiser', main, 'ghost'),
-  ));
+  if (!mine) {
+    const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
+    return show(
+      card(
+        ...head, ta,
+        btn('Envoyer 💌', async () => {
+          if (!ta.value.trim()) return ta.focus();
+          const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
+          if (error) return alert(error.message);
+          channel?.send({ type: 'broadcast', event: 'answered', payload: {} });
+          main();
+        }),
+        h('p', { className: 'label' }, 'Ton/ta partenaire'),
+        h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
+      ),
+      nudge, notifs, souvenirs, emailCard,
+    );
+  }
+
+  show(
+    card(
+      ...head,
+      h('p', { className: 'label me' }, 'Toi'),
+      h('div', { className: 'bubble mine' }, mine.text),
+      h('p', { className: 'label' }, 'Ton/ta partenaire'),
+      theirs
+        ? h('div', { className: 'bubble theirs' }, theirs.text)
+        : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
+      theirs ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞') : btn('Actualiser', () => showToday(couple, user), 'ghost'),
+    ),
+    nudge, notifs, souvenirs, emailCard,
+  );
+}
+
+async function showHistory(couple, user) {
+  // La RLS ne renvoie que les jours où tu as répondu : leur réponse d'un jour sans la tienne reste secrète
+  const { data, error } = await sb.from('answers')
+    .select('user_id, day, text').eq('couple_id', couple.id)
+    .order('day', { ascending: false }).limit(120);
+  if (error) return fail(error);
+
+  const days = [];
+  for (const row of data) {
+    let d = days.at(-1);
+    if (!d || d.day !== row.day) { d = { day: row.day, mine: null, theirs: null }; days.push(d); }
+    if (row.user_id === user.id) d.mine = row.text; else d.theirs = row.text;
+  }
+
+  const view = [card(
+    h('p', { className: 'eyebrow' }, 'Nos souvenirs'),
+    h('p', { className: 'hint' }, days.length ? `${days.length} jour${days.length > 1 ? 's' : ''} de réponses. Reviens aussi longtemps : tout reste ici.` : 'Pas encore de souvenirs — réponds à la question du jour !'),
+    btn('Retour', () => showToday(couple, user), 'ghost'),
+  )];
+  for (const d of days) {
+    const kids = [
+      h('p', { className: 'eyebrow' }, new Date(d.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })),
+      h('p', { className: 'question' }, questionFor(d.day)),
+    ];
+    if (d.mine) kids.push(h('p', { className: 'label me' }, 'Toi'), h('div', { className: 'bubble mine' }, d.mine));
+    kids.push(h('p', { className: 'label' }, 'Ton/ta partenaire'));
+    kids.push(d.theirs
+      ? h('div', { className: 'bubble theirs' }, d.theirs)
+      : h('div', { className: 'bubble locked' }, 'Pas de réponse ce jour-là'));
+    view.push(card(...kids));
+  }
+  show(...view);
 }
 
 main().catch(fail);
