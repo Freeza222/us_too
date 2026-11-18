@@ -35,6 +35,18 @@ language sql security definer set search_path = public as $$
   where code = upper(c) and b is null and a <> auth.uid()
   returning id;
 $$;
+create or replace function ensure_my_key() returns void
+language plpgsql security definer set search_path = public as $$
+declare r couples%rowtype;
+begin
+  select * into r from couples where a = auth.uid() or b = auth.uid() limit 1;
+  if r.id is null then return; end if;
+  if r.a = auth.uid() and coalesce(r.key_a, '') = '' then
+    update couples set key_a = upper(substr(md5(random()::text), 1, 10)) where id = r.id;
+  elsif r.b = auth.uid() and coalesce(r.key_b, '') = '' then
+    update couples set key_b = upper(substr(md5(random()::text), 1, 10)) where id = r.id;
+  end if;
+end $$;
 -- + les blocs create or replace de recover_couple, leave_couple et dissolve_couple (dans schema.sql)
 alter publication supabase_realtime add table answers;
 alter publication supabase_realtime add table couples;

@@ -175,6 +175,14 @@ async function main() {
   if (error) return fail(error);
   couple = couples[0] ?? null;
 
+  // Auto-réparation : si ma clé personnelle n'existe pas encore (compte inscrit
+  // avant la mise à jour SQL), le serveur la génère, puis on relit la ligne.
+  if (couple && !((couple.a === user.id && couple.key_a) || (couple.b === user.id && couple.key_b))) {
+    await sb.rpc('ensure_my_key').catch(() => {});
+    const { data: fresh } = await sb.from('couples').select('*').limit(1);
+    if (fresh?.length) couple = fresh[0];
+  }
+
   if (!couple) { setTabs(false); return showPairing(user.id); }
   listen(couple, user);
   route();
@@ -329,7 +337,7 @@ function showNous() {
   ));
 
   // Se reconnecter un jour : code de l'espace + clé personnelle
-  const myKey = couple.a === user.id ? couple.key_a : couple.key_b;
+  const myKey = couple.a === user.id ? couple.key_a : couple.b === user.id ? couple.key_b : null;
   cards.push(card(
     h('p', { className: 'eyebrow' }, 'Me reconnecter'),
     h('p', { className: 'hint' }, 'Sur un nouveau téléphone ou après un nettoyage du navigateur : entre ces deux codes à l\u2019écran Bienvenue pour retrouver ta place et vos souvenirs. Ta clé est personnelle, garde-la précieusement.'),

@@ -36,6 +36,21 @@ language sql security definer set search_path = public as $$
   returning id;
 $$;
 
+-- Génère la clé personnelle du compte connecté si elle manque encore
+-- (comptes partenaires inscrits avant la mise à jour key_a/key_b).
+create or replace function ensure_my_key() returns void
+language plpgsql security definer set search_path = public as $$
+declare r couples%rowtype;
+begin
+  select * into r from couples where a = auth.uid() or b = auth.uid() limit 1;
+  if r.id is null then return; end if;
+  if r.a = auth.uid() and coalesce(r.key_a, '') = '' then
+    update couples set key_a = upper(substr(md5(random()::text), 1, 10)) where id = r.id;
+  elsif r.b = auth.uid() and coalesce(r.key_b, '') = '' then
+    update couples set key_b = upper(substr(md5(random()::text), 1, 10)) where id = r.id;
+  end if;
+end $$;
+
 -- Récupérer sa place après "déconnexion" (nouveau téléphone, données vidées) :
 -- code de l'espace + clé personnelle → la place est réattribuée, réponses comprises.
 create or replace function recover_couple(c text, s text) returns void
