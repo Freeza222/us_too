@@ -3,99 +3,144 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#fff0f3">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff7f9">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#161016">
 <title>Nous deux</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Nunito:ital,wght@0,400..800;1,400..700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --rose: #e64980; --rose-soft: #ffdeeb; --peach: #ffe8cc;
-    --bg: #fff5f7; --card: #ffffffcc; --text: #2b2024; --muted: #94838a; --field: #fff0f3;
+    --rose: #e5457e; --rose-deep: #c2255c; --blush: #ffe1ec; --peach: #ffeadb;
+    --bg: #fff7f9; --card: #ffffffbf; --text: #322029; --muted: #a28792; --field: #fff2f7;
+    --edge: #ffffffb3; --ring: #e5457e22; --tint: #e5457e1a;
+    --font-display: "Fraunces", ui-serif, Georgia, serif;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --rose-soft: #4a1f30; --peach: #3a2a1c; --bg: #17111a; --card: #241a22cc; --text: #f6eef1; --muted: #b3a1a9; --field: #1d1519; }
+    :root {
+      --blush: #331627; --peach: #2e2018; --bg: #161016; --card: #241822bd;
+      --text: #f7edf3; --muted: #b79dab; --field: #1f131d; --edge: #ffffff1f; --ring: #e5457e44; --tint: #e5457e2e;
+    }
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100dvh; color: var(--text);
-    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0; min-height: 100dvh; overflow-x: hidden; color: var(--text);
+    font: 500 16px/1.55 "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
     background:
-      radial-gradient(circle at 15% -10%, var(--rose-soft), transparent 55%),
-      radial-gradient(circle at 110% 110%, var(--peach), transparent 50%),
+      radial-gradient(55rem 38rem at 8% -12%, var(--blush), transparent 62%),
+      radial-gradient(45rem 32rem at 108% 112%, var(--peach), transparent 58%),
       var(--bg);
     background-attachment: fixed;
   }
-  main { max-width: 30rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  /* Deux halos doux qui dérivent en fond */
+  body::before, body::after {
+    content: ''; position: fixed; z-index: -1; border-radius: 50%;
+    filter: blur(70px); opacity: .55; pointer-events: none;
+  }
+  body::before { width: 22rem; height: 22rem; top: -8rem; left: -6rem; background: var(--blush); animation: drift 16s ease-in-out infinite alternate; }
+  body::after  { width: 26rem; height: 26rem; bottom: -10rem; right: -8rem; background: var(--peach); animation: drift 20s ease-in-out infinite alternate-reverse; }
+
+  main { max-width: 30rem; margin: 0 auto; padding: 3rem 1.5rem 5.5rem; }
   h1 {
-    font: 600 2.4rem/1.1 ui-serif, Georgia, "Times New Roman", serif;
-    margin: 0 0 1.5rem; text-align: center; letter-spacing: -.02em;
+    margin: 0; text-align: center; color: var(--rose-deep);
+    font: italic 700 clamp(2.4rem, 9vw, 2.9rem)/1.08 var(--font-display);
+    letter-spacing: -.02em;
   }
   h1 span { display: inline-block; animation: beat 1.6s ease-in-out infinite; }
+  .tagline { margin: .5rem 0 2.2rem; text-align: center; color: var(--muted); font-size: .95rem; }
 
   .card {
-    background: var(--card); backdrop-filter: blur(12px);
-    padding: 1.5rem; border-radius: 1.5rem; margin: 0 0 1rem;
-    box-shadow: 0 10px 30px -12px #e6498040, 0 1px 0 #ffffff80 inset;
-    animation: up .4s ease-out both;
+    background: var(--card); backdrop-filter: blur(16px) saturate(1.2);
+    padding: 1.7rem 1.6rem; border-radius: 1.7rem; margin: 0 0 1rem;
+    box-shadow:
+      0 24px 50px -26px #c2255c40,
+      0 1px 0 var(--edge) inset,
+      0 0 0 1px var(--edge);
+    animation: up .5s cubic-bezier(.2, .8, .3, 1) both;
   }
-  .card + .card { animation-delay: .08s; }
-  .eyebrow { margin: 0 0 .3rem; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--rose); }
-  .question { margin: 0 0 1.25rem; font: 500 1.5rem/1.3 ui-serif, Georgia, serif; }
-  .hint { color: var(--muted); font-size: .9rem; margin: 0 0 1rem; }
+  .card + .card { animation-delay: .07s; }
+  .card.actions { padding: 1rem 1rem .4rem; }
+  .eyebrow {
+    display: inline-block; margin: 0 0 .9rem; padding: .28rem .75rem; border-radius: 999px;
+    background: var(--tint); color: var(--rose);
+    font-size: .68rem; font-weight: 800; letter-spacing: .15em; text-transform: uppercase;
+  }
+  .question {
+    margin: 0 0 1.35rem; text-wrap: balance;
+    font: 500 1.5rem/1.32 var(--font-display); letter-spacing: -.01em;
+  }
+  .hint { color: var(--muted); font-size: .93rem; margin: 0 0 1rem; }
 
   textarea, input {
-    width: 100%; padding: .9rem 1rem; font: inherit; color: inherit;
-    background: var(--field); border: 2px solid transparent; border-radius: 1rem;
-    outline: none; transition: border-color .2s;
+    width: 100%; padding: .95rem 1.1rem; font: inherit; color: inherit;
+    background: var(--field); border: 1.5px solid var(--ring); border-radius: 1.15rem;
+    outline: none; transition: border-color .2s, box-shadow .2s;
   }
-  textarea { resize: vertical; min-height: 7rem; }
-  textarea:focus, input:focus { border-color: var(--rose); }
-  input.code-input { text-align: center; text-transform: uppercase; letter-spacing: .4em; font-size: 1.3rem; font-weight: 600; }
+  textarea { resize: vertical; min-height: 7.5rem; }
+  textarea:focus, input:focus { border-color: var(--rose); box-shadow: 0 0 0 4px var(--tint); }
+  input.code-input { text-align: center; text-transform: uppercase; letter-spacing: .4em; font-size: 1.25rem; font-weight: 700; }
 
   button {
-    display: block; width: 100%; margin-top: .75rem; padding: .85rem 1.2rem;
-    font: inherit; font-weight: 600; line-height: 1; color: #fff; cursor: pointer;
-    border: 0; border-radius: 999px;
-    background: linear-gradient(135deg, #ff6b9a, var(--rose));
-    box-shadow: 0 6px 16px -6px var(--rose);
-    transition: transform .1s, opacity .2s;
+    display: block; width: 100%; margin-top: .8rem; padding: .95rem 1.2rem;
+    font-family: inherit; font-size: .98rem; font-weight: 800; line-height: 1;
+    color: #fff; cursor: pointer; border: 0; border-radius: 999px;
+    background: linear-gradient(135deg, #ff7aa2, var(--rose) 55%, var(--rose-deep));
+    box-shadow: 0 12px 26px -12px var(--rose-deep);
+    transition: transform .15s, box-shadow .15s, opacity .2s, background .2s;
   }
+  button:hover { transform: translateY(-1px); box-shadow: 0 16px 30px -12px var(--rose-deep); }
   button:active { transform: scale(.97); }
-  button:disabled { opacity: .5; cursor: wait; }
-  button.ghost { background: none; box-shadow: none; color: var(--rose); }
-  button:focus-visible, textarea:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+  button:disabled { opacity: .5; cursor: wait; transform: none; }
+  button.ghost { background: none; box-shadow: none; color: var(--rose); transition: background .15s, transform .15s; }
+  button.ghost:hover { background: var(--tint); }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
 
   .code {
-    margin: .5rem 0 1rem; text-align: center;
-    font: 700 2.6rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .35em; text-indent: .35em; color: var(--rose);
+    margin: .9rem 0 1.2rem; text-align: center; color: var(--rose);
+    font: 700 2.4rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: .35em; text-indent: .35em;
+    text-shadow: 0 6px 24px #e5457e55;
   }
 
-  .label { margin: 1rem 0 .3rem; font-size: .8rem; color: var(--muted); }
+  .label { margin: 1.1rem 0 .35rem; font-size: .76rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .label.me { text-align: right; }
   .bubble {
-    width: fit-content; max-width: 88%; padding: .75rem 1rem; border-radius: 1.25rem;
-    white-space: pre-wrap; overflow-wrap: anywhere; animation: up .35s ease-out both;
+    width: fit-content; max-width: 88%; padding: .85rem 1.1rem; border-radius: 1.3rem;
+    white-space: pre-wrap; overflow-wrap: anywhere; animation: up .4s cubic-bezier(.2, .8, .3, 1) both;
   }
-  .bubble.mine { margin-left: auto; color: #fff; background: linear-gradient(135deg, #ff6b9a, var(--rose)); border-bottom-right-radius: .35rem; }
-  .bubble.theirs { background: var(--field); border-bottom-left-radius: .35rem; }
-  .bubble.locked { background: none; border: 2px dashed var(--muted); color: var(--muted); border-bottom-left-radius: .35rem; }
-  .both { margin: 1.25rem 0 0; text-align: center; font-weight: 600; color: var(--rose); }
+  .bubble.mine {
+    margin-left: auto; color: #fff;
+    background: linear-gradient(135deg, #ff7aa2, var(--rose) 60%, var(--rose-deep));
+    border-bottom-right-radius: .4rem;
+    box-shadow: 0 12px 26px -14px var(--rose-deep);
+  }
+  .bubble.theirs { background: var(--field); border: 1px solid var(--edge); border-bottom-left-radius: .4rem; }
+  .bubble.locked {
+    background: none; border: 1.5px dashed var(--muted); color: var(--muted);
+    font-style: italic; border-bottom-left-radius: .4rem;
+  }
+  .both { margin: 1.4rem 0 0; text-align: center; font: italic 600 1.05rem var(--font-display); color: var(--rose); }
 
   .toast {
-    position: fixed; left: 50%; bottom: 1.5rem; transform: translateX(-50%);
-    max-width: calc(100vw - 2.5rem); padding: .8rem 1.1rem; font-weight: 600;
-    background: var(--card); backdrop-filter: blur(12px); color: var(--text);
-    border-radius: 1rem; box-shadow: 0 10px 30px -12px #e6498040, 0 1px 0 #ffffff80 inset;
-    animation: toast-up .35s ease-out both; z-index: 2; white-space: pre-wrap;
+    position: fixed; left: 50%; bottom: 1.6rem; transform: translateX(-50%);
+    width: max-content; max-width: calc(100vw - 2.5rem);
+    padding: .85rem 1.3rem; font-weight: 700; font-size: .95rem;
+    background: var(--card); backdrop-filter: blur(16px) saturate(1.2); color: var(--text);
+    border-radius: 999px; box-shadow: 0 18px 40px -18px #c2255c66, 0 0 0 1px var(--edge);
+    animation: toast-up .35s cubic-bezier(.2, .8, .3, 1) both; z-index: 2; white-space: pre-wrap;
   }
 
-  @keyframes toast-up { from { opacity: 0; transform: translate(-50%, 10px); } }
-  @keyframes up { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes toast-up { from { opacity: 0; transform: translate(-50%, 12px); } }
+  @keyframes up { from { opacity: 0; transform: translateY(14px); } }
   @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.18); } 30% { transform: scale(1); } }
+  @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(4rem, 3rem) scale(1.15); } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
 <main>
   <h1>Nous deux <span aria-hidden="true">💞</span></h1>
+  <p class="tagline">Une question par jour, rien que pour vous deux.</p>
   <div id="app"><p class="hint" style="text-align:center">Chargement…</p></div>
 </main>
 
@@ -288,6 +333,7 @@ async function showToday(couple, user) {
     toast(p === 'granted' ? 'Notifications activées 💞' : 'Notifications refusées');
   }, 'ghost');
   const souvenirs = btn('Nos souvenirs', () => { current = null; showHistory(couple, user); }, 'ghost');
+  const actions = h('div', { className: 'card actions' }, nudge, notifs, souvenirs);
 
   // Un compte anonyme vit dans le navigateur : proposer un email pour sauver les réponses
   let emailCard = null;
@@ -321,7 +367,7 @@ async function showToday(couple, user) {
         h('p', { className: 'label' }, 'Ton/ta partenaire'),
         h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
       ),
-      nudge, notifs, souvenirs, emailCard,
+      actions, emailCard,
     );
   }
 
@@ -336,7 +382,7 @@ async function showToday(couple, user) {
         : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
       theirs ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞') : btn('Actualiser', () => showToday(couple, user), 'ghost'),
     ),
-    nudge, notifs, souvenirs, emailCard,
+    actions, emailCard,
   );
 }
 
