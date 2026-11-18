@@ -3,25 +3,97 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#fff0f3">
 <title>Nous deux</title>
 <style>
-  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto; padding: 0 1rem; background: #fff7f8; color: #222; }
-  h1 { color: #d6336c; }
-  .card { background: #fff; padding: 1rem; border-radius: .75rem; margin: 1rem 0; box-shadow: 0 1px 4px #0002; }
-  textarea, input { width: 100%; box-sizing: border-box; padding: .6rem; font: inherit; border: 1px solid #ccc; border-radius: .5rem; }
-  button { margin-top: .5rem; padding: .6rem 1rem; font: inherit; border: 0; border-radius: .5rem; background: #d6336c; color: #fff; cursor: pointer; }
-  button:disabled { opacity: .5; }
-  .code { font-size: 2rem; letter-spacing: .3rem; font-weight: bold; }
+  :root {
+    --rose: #e64980; --rose-soft: #ffdeeb; --peach: #ffe8cc;
+    --bg: #fff5f7; --card: #ffffffcc; --text: #2b2024; --muted: #94838a; --field: #fff0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --rose-soft: #4a1f30; --peach: #3a2a1c; --bg: #17111a; --card: #241a22cc; --text: #f6eef1; --muted: #b3a1a9; --field: #1d1519; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100dvh; color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background:
+      radial-gradient(circle at 15% -10%, var(--rose-soft), transparent 55%),
+      radial-gradient(circle at 110% 110%, var(--peach), transparent 50%),
+      var(--bg);
+    background-attachment: fixed;
+  }
+  main { max-width: 30rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 {
+    font: 600 2.4rem/1.1 ui-serif, Georgia, "Times New Roman", serif;
+    margin: 0 0 1.5rem; text-align: center; letter-spacing: -.02em;
+  }
+  h1 span { display: inline-block; animation: beat 1.6s ease-in-out infinite; }
+
+  .card {
+    background: var(--card); backdrop-filter: blur(12px);
+    padding: 1.5rem; border-radius: 1.5rem; margin: 0 0 1rem;
+    box-shadow: 0 10px 30px -12px #e6498040, 0 1px 0 #ffffff80 inset;
+    animation: up .4s ease-out both;
+  }
+  .card + .card { animation-delay: .08s; }
+  .eyebrow { margin: 0 0 .3rem; font-size: .75rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--rose); }
+  .question { margin: 0 0 1.25rem; font: 500 1.5rem/1.3 ui-serif, Georgia, serif; }
+  .hint { color: var(--muted); font-size: .9rem; margin: 0 0 1rem; }
+
+  textarea, input {
+    width: 100%; padding: .9rem 1rem; font: inherit; color: inherit;
+    background: var(--field); border: 2px solid transparent; border-radius: 1rem;
+    outline: none; transition: border-color .2s;
+  }
+  textarea { resize: vertical; min-height: 7rem; }
+  textarea:focus, input:focus { border-color: var(--rose); }
+  input.code-input { text-align: center; text-transform: uppercase; letter-spacing: .4em; font-size: 1.3rem; font-weight: 600; }
+
+  button {
+    display: block; width: 100%; margin-top: .75rem; padding: .85rem 1.2rem;
+    font: inherit; font-weight: 600; line-height: 1; color: #fff; cursor: pointer;
+    border: 0; border-radius: 999px;
+    background: linear-gradient(135deg, #ff6b9a, var(--rose));
+    box-shadow: 0 6px 16px -6px var(--rose);
+    transition: transform .1s, opacity .2s;
+  }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .5; cursor: wait; }
+  button.ghost { background: none; box-shadow: none; color: var(--rose); }
+  button:focus-visible, textarea:focus-visible { outline: 3px solid var(--rose); outline-offset: 2px; }
+
+  .code {
+    margin: .5rem 0 1rem; text-align: center;
+    font: 700 2.6rem/1 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .35em; text-indent: .35em; color: var(--rose);
+  }
+
+  .label { margin: 1rem 0 .3rem; font-size: .8rem; color: var(--muted); }
+  .label.me { text-align: right; }
+  .bubble {
+    width: fit-content; max-width: 88%; padding: .75rem 1rem; border-radius: 1.25rem;
+    white-space: pre-wrap; overflow-wrap: anywhere; animation: up .35s ease-out both;
+  }
+  .bubble.mine { margin-left: auto; color: #fff; background: linear-gradient(135deg, #ff6b9a, var(--rose)); border-bottom-right-radius: .35rem; }
+  .bubble.theirs { background: var(--field); border-bottom-left-radius: .35rem; }
+  .bubble.locked { background: none; border: 2px dashed var(--muted); color: var(--muted); border-bottom-left-radius: .35rem; }
+  .both { margin: 1.25rem 0 0; text-align: center; font-weight: 600; color: var(--rose); }
+
+  @keyframes up { from { opacity: 0; transform: translateY(10px); } }
+  @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.18); } 30% { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
-<h1>Nous deux </h1>
-<main id="app">Chargement…</main>
+<main>
+  <h1>Nous deux <span aria-hidden="true">💞</span></h1>
+  <div id="app"><p class="hint" style="text-align:center">Chargement…</p></div>
+</main>
 
 <script type="module">
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-// Supabase > Project Settings > API (la clé "anon" est publique, c'est normal)
+// Supabase > Project Settings > API Keys (la clé publishable/anon est publique, c'est normal)
 const SUPABASE_URL = 'https://njvatmicnmekplpkvppd.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_1A5R-PFEg8rN8lc5junI7Q_bbCIEbBB';
 
@@ -65,16 +137,19 @@ const app = document.getElementById('app');
 const h = (tag, props = {}, ...kids) => { const el = Object.assign(document.createElement(tag), props); el.append(...kids); return el; };
 const show = (...els) => app.replaceChildren(...els);
 const card = (...kids) => h('div', { className: 'card' }, ...kids);
-const fail = (e) => show(card(h('p', {}, 'Erreur : ' + e.message), btn('Réessayer', main)));
-const btn = (label, fn) => h('button', { onclick: async (e) => {
+const fail = (e) => show(card(h('p', { className: 'eyebrow' }, 'Oups'), h('p', {}, e.message), btn('Réessayer', main)));
+const btn = (label, fn, className = '') => h('button', { className, onclick: async (e) => {
   e.target.disabled = true;
   try { await fn(); } finally { e.target.disabled = false; }
 } }, label);
+const share = (code) => navigator.share
+  ? navigator.share({ text: `Rejoins-moi sur Nous deux 💞 Code : ${code}\n${location.href}` }).catch(() => {})
+  : navigator.clipboard.writeText(code).then(() => alert('Code copié !'));
 
 async function main() {
   // ponytail: compte anonyme lié au navigateur (vider les données = perdre le couple). Passer à l'email OTP si besoin.
   const { data: { session } } = await sb.auth.getSession();
-    let user = session?.user;
+  let user = session?.user;
   if (!user) {
     const { data, error } = await sb.auth.signInAnonymously();
     if (error) return fail(error);
@@ -87,31 +162,43 @@ async function main() {
 
   if (!couple) return showPairing(user.id);
   if (!couple.b) return show(card(
-    h('p', {}, 'Envoie ce code à ton/ta partenaire :'),
+    h('p', { className: 'eyebrow' }, 'Presque prêt'),
+    h('p', { className: 'question' }, 'Envoie ce code à ton/ta partenaire'),
     h('p', { className: 'code' }, couple.code),
-    btn('Actualiser', main),
+    btn('Partager le code', () => share(couple.code)),
+    btn('J\'ai envoyé, actualiser', main, 'ghost'),
   ));
   showToday(couple, user.id);
 }
 
 function showPairing(me) {
-  const input = h('input', { placeholder: 'Code à 6 caractères', maxLength: 6 });
+  const input = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code du partenaire' });
   show(
-    card(h('p', {}, 'Crée votre couple et partage le code…'), btn('Créer un code', async () => {
-      const { error } = await sb.from('couples').insert({ a: me });
-      error ? alert(error.message) : main();
-    })),
-    card(h('p', {}, '…ou rejoins avec le code reçu :'), input, btn('Rejoindre', async () => {
-      const { data, error } = await sb.rpc('join_couple', { c: input.value.trim() });
-      if (error || !data) return alert(error?.message ?? 'Code invalide ou déjà utilisé');
-      main();
-    })),
+    card(
+      h('p', { className: 'eyebrow' }, 'Bienvenue'),
+      h('p', { className: 'question' }, 'Une question par jour, rien que pour vous deux.'),
+      h('p', { className: 'hint' }, 'Vous répondez chacun de votre côté, et la réponse de l\'autre se dévoile quand vous avez répondu.'),
+      btn('Créer notre espace', async () => {
+        const { error } = await sb.from('couples').insert({ a: me });
+        error ? alert(error.message) : main();
+      }),
+    ),
+    card(
+      h('p', { className: 'eyebrow' }, 'Tu as reçu un code ?'),
+      input,
+      btn('Rejoindre', async () => {
+        const { data, error } = await sb.rpc('join_couple', { c: input.value.trim() });
+        if (error || !data) return alert(error?.message ?? 'Code invalide ou déjà utilisé');
+        main();
+      }),
+    ),
   );
 }
 
 async function showToday(couple, me) {
   const today = new Date().toISOString().slice(0, 10); // UTC, comme current_date côté Supabase
   const question = QUESTIONS[Math.floor(Date.parse(today) / 86400000) % QUESTIONS.length];
+  const dateLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
   const { data: answers, error } = await sb.from('answers')
     .select('user_id, text').eq('couple_id', couple.id).eq('day', today);
@@ -119,22 +206,31 @@ async function showToday(couple, me) {
 
   const mine = answers.find((a) => a.user_id === me);
   const theirs = answers.find((a) => a.user_id !== me);
-  const q = h('p', {}, h('strong', {}, question));
+  const head = [h('p', { className: 'eyebrow' }, dateLabel), h('p', { className: 'question' }, question)];
 
   if (!mine) {
-    const ta = h('textarea', { rows: 4, placeholder: 'Ta réponse…', maxLength: 2000 });
-    return show(card(q, ta, btn('Envoyer', async () => {
-      if (!ta.value.trim()) return;
-      const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
-      error ? alert(error.message) : main();
-    })));
+    const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
+    return show(card(
+      ...head, ta,
+      btn('Envoyer 💌', async () => {
+        if (!ta.value.trim()) return ta.focus();
+        const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
+        error ? alert(error.message) : main();
+      }),
+      h('p', { className: 'label' }, 'Ton/ta partenaire'),
+      h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
+    ));
   }
 
   show(card(
-    q,
-    h('p', {}, h('strong', {}, 'Toi : '), mine.text),
-    h('p', {}, h('strong', {}, 'Ton/ta partenaire : '), theirs ? theirs.text : 'pas encore répondu…'),
-    btn('Actualiser', main),
+    ...head,
+    h('p', { className: 'label me' }, 'Toi'),
+    h('div', { className: 'bubble mine' }, mine.text),
+    h('p', { className: 'label' }, 'Ton/ta partenaire'),
+    theirs
+      ? h('div', { className: 'bubble theirs' }, theirs.text)
+      : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
+    theirs ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞') : btn('Actualiser', main, 'ghost'),
   ));
 }
 
