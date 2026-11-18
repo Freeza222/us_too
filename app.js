@@ -48,8 +48,18 @@ let view = 'jour';    // vue affichée : jour | souvenirs | nous
 let channel = null;   // canal Supabase Realtime
 let flashTimer = null;
 
-// Mini helper DOM : les strings deviennent des text nodes → pas d'injection HTML
-const h = (tag, props = {}, ...kids) => { const el = Object.assign(document.createElement(tag), props); el.append(...kids); return el; };
+// Mini helper DOM : les strings deviennent des text nodes → pas d'injection HTML.
+// Aplatit les tableaux de nodes et ignore null/false (branches de ternaires).
+const h = (tag, props = {}, ...kids) => {
+  const el = Object.assign(document.createElement(tag), props);
+  const add = (n) => {
+    if (n == null || n === false) return;
+    if (Array.isArray(n)) { for (const c of n) add(c); return; }
+    el.append(n);
+  };
+  for (const k of kids) add(k);
+  return el;
+};
 const show = (...els) => app.replaceChildren(...els);
 const card = (...kids) => h('div', { className: 'card' }, ...kids);
 const fail = (e) => show(card(h('p', { className: 'eyebrow' }, 'Oups'), h('p', {}, e.message), btn('Réessayer', main)));
