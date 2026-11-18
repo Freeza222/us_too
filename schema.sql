@@ -32,6 +32,31 @@ language sql security definer set search_path = public as $$
   returning id;
 $$;
 
+-- Quitter son espace : il reste à l'autre (avec vos réponses), on repart de zéro.
+create or replace function leave_couple() returns void
+language plpgsql security definer set search_path = public as $$
+declare r couples%rowtype;
+begin
+  select * into r from couples where auth.uid() in (a, b) limit 1;
+  if r.id is null then return; end if;
+  if r.a = auth.uid() then
+    if r.b is null then
+      delete from couples where id = r.id; -- espace jamais complété : on le supprime
+    else
+      update couples set a = r.b, b = null where id = r.id; -- l'autre devient titulaire
+    end if;
+  else
+    update couples set b = null where id = r.id;
+  end if;
+end $$;
+
+-- Dissoudre : supprime l'espace et toutes les réponses (cascade).
+create or replace function dissolve_couple() returns void
+language sql security definer set search_path = public as $$
+  delete from couples
+  where id in (select id from couples where auth.uid() in (a, b));
+$$;
+
 -- Helper hors RLS (une policy sur answers ne peut pas relire answers sans récursion)
 create function has_answered(cid uuid, d date) returns boolean
 language sql stable security definer set search_path = public as $$
@@ -49,6 +74,7 @@ create policy "répondre aujourd'hui" on answers for insert with check (
   and couple_id in (select id from couples where auth.uid() in (a, b))
 );
 
--- Temps réel : le flux INSERT de answers est diffusé au channel du couple.
+-- Temps réel : les flux INSERT de answers et UPDATE de couples sont diffusés au channel du couple.
 -- La RLS ci-dessus s'applique aussi à Realtime, donc rien ne fuite avant dévoilement.
 alter publication supabase_realtime add table answers;
+alter publication supabase_realtime add table couples;
