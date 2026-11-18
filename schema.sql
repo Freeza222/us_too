@@ -1,10 +1,12 @@
 -- À coller dans Supabase > SQL Editor > Run
 
 create table couples (
-  id   uuid primary key default gen_random_uuid(),
-  code text unique not null default upper(substr(md5(random()::text), 1, 6)),
-  a    uuid not null default auth.uid() references auth.users on delete cascade,
-  b    uuid references auth.users on delete cascade
+  id    uuid primary key default gen_random_uuid(),
+  code  text unique not null default upper(substr(md5(random()::text), 1, 6)),
+  key_a text not null default upper(substr(md5(random()::text), 1, 10)), -- clé de reconnexion du partenaire a
+  key_b text,                                                          -- générée quand b rejoint
+  a     uuid not null default auth.uid() references auth.users on delete cascade,
+  b     uuid references auth.users on delete cascade
 );
 
 create table answers (
@@ -25,12 +27,31 @@ create policy "créer un couple" on couples for insert
   with check (a = auth.uid() and b is null);
 
 -- Rejoindre via le code (security definer car on ne "voit" pas encore le couple)
-create function join_couple(c text) returns uuid
+-- Rejoindre via le code (security definer car on ne "voit" pas encore le couple).
+-- Génère aussi la clé de reconnexion du nouveau partenaire.
+create or replace function join_couple(c text) returns uuid
 language sql security definer set search_path = public as $$
-  update couples set b = auth.uid()
+  update couples set b = auth.uid(), key_b = upper(substr(md5(random()::text), 1, 10))
   where code = upper(c) and b is null and a <> auth.uid()
   returning id;
 $$;
+
+-- Récupérer sa place après "déconnexion" (nouveau téléphone, données vidées) :
+-- code de l'espace + clé personnelle → la place est réattribuée, réponses comprises.
+create or replace function recover_couple(c text, s text) returns void
+language plpgsql security definer set search_path = public as $$
+declare r couples%rowtype; old_uid uuid;
+begin
+  select * into r from couples where code = upper(c) limit 1;
+  if r.id is null then raise exception 'Espace introuvable'; end if;
+  if upper(s) = r.key_a then old_uid := r.a;
+  elsif r.key_b is not null and upper(s) = r.key_b then old_uid := r.b;
+  else raise exception 'Clé de reconnexion invalide'; end if;
+  delete from answers where couple_id = r.id and user_id = auth.uid(); -- évite un conflit de clé primaire
+  update couples set a = auth.uid() where id = r.id and a = old_uid;
+  update couples set b = auth.uid() where id = r.id and b = old_uid;
+  update answers set user_id = auth.uid() where couple_id = r.id and user_id = old_uid;
+end $$;
 
 -- Quitter son espace : il reste à l'autre (avec vos réponses), on repart de zéro.
 create or replace function leave_couple() returns void

@@ -8,22 +8,37 @@ Pas de serveur : un fichier HTML statique + Supabase (gratuit).
 1. Crée un projet sur https://supabase.com
 2. **SQL Editor** → colle `schema.sql` → **Run**
 3. **Authentication → Sign In / Providers** → active **Allow anonymous sign-ins**
-Toute la logique est dans `app.js`, le style dans `style.css`, l'ossature dans `index.html`.
-Les URL et clé à copier sont en haut de `app.js` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`).
+4. **Project Settings → API** → copie l'URL et la clé `anon` en haut de `app.js` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`)
+
+La logique est dans `app.js`, le style dans `style.css`, l'ossature dans `index.html`.
 
 ## Déjà en ligne et mise à jour ?
 
-Si le projet Supabase existait avant une mise à jour du `schema.sql`, ré-exécute dans le **SQL Editor** les seuls ajouts concernés :
+Si le projet Supabase existait avant une mise à jour du `schema.sql`, ré-exécute dans le **SQL Editor** les seuls ajouts concernés.
+
+Temps réel (une fois) :
 
 ```sql
--- temps réel (une fois)
 alter publication supabase_realtime add table answers;
 alter publication supabase_realtime add table couples;
-
--- quitter / dissoudre un espace (fonctions créées à la suite de join_couple dans schema.sql)
 ```
 
-Recolle simplement les fonctions `leave_couple` et `dissolve_couple` depuis `schema.sql` (elles sont en `create or replace`).
+Reconnexion par clé personnelle : recolle dans le **SQL Editor** le bloc complet ci-dessous (colonnes + fonctions + temps réel), puis **Run** — tout est en `create or replace`, tu peux le rejouer sans risque :
+
+```sql
+alter table couples add column if not exists key_a text not null default upper(substr(md5(random()::text), 1, 10));
+alter table couples add column if not exists key_b text;
+update couples set key_b = upper(substr(md5(random()::text), 1, 10)) where b is not null and key_b is null;
+create or replace function join_couple(c text) returns uuid
+language sql security definer set search_path = public as $$
+  update couples set b = auth.uid(), key_b = upper(substr(md5(random()::text), 1, 10))
+  where code = upper(c) and b is null and a <> auth.uid()
+  returning id;
+$$;
+-- + les blocs create or replace de recover_couple, leave_couple et dissolve_couple (dans schema.sql)
+alter publication supabase_realtime add table answers;
+alter publication supabase_realtime add table couples;
+```
 
 ## Ce que l'app fait
 
@@ -34,6 +49,7 @@ Recolle simplement les fonctions `leave_couple` et `dissolve_couple` depuis `sch
 - Nos souvenirs : historique des jours passés où tu as répondu (la règle du secret s'applique : un jour sans ta réponse reste invisible).
 - Email de secours : proposé tant que le compte est anonyme, pour ne pas perdre les réponses si les données du navigateur sont vidées.
 - Quitter l'espace (onglet Nous) : tu sors de la session, le partenaire garde l'espace et vos réponses. Dissoudre supprime définitivement l'espace et toutes les réponses.
+- Reconnexion (onglet Nous) : chaque partenaire a un code d'espace + une clé personnelle à noter. Sur un nouveau téléphone ou après avoir vidé les données du navigateur, se reconnecter depuis l'écran Bienvenue retrouve sa place et ses réponses. La clé est personnelle : sans elle, personne ne peut reprendre ta place.
 
 ## Tester en local
 

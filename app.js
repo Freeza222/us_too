@@ -172,6 +172,8 @@ async function main() {
 
 function showPairing(me) {
   const input = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code du partenaire' });
+  const code = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code de votre espace' });
+  const secret = h('input', { className: 'code-input', placeholder: 'CLÉ…', maxLength: 10, autocomplete: 'off', ariaLabel: 'Ta clé de reconnexion' });
   show(
     card(
       h('p', { className: 'eyebrow' }, 'Bienvenue'),
@@ -188,6 +190,19 @@ function showPairing(me) {
       btn('Rejoindre', async () => {
         const { data, error } = await sb.rpc('join_couple', { c: input.value.trim() });
         if (error || !data) return alert(error?.message ?? 'Code invalide ou déjà utilisé');
+        main();
+      }),
+    ),
+    card(
+      h('p', { className: 'eyebrow' }, 'Tu te reconnectes ?'),
+      h('p', { className: 'hint' }, 'Après un changement de téléphone ou un nettoyage du navigateur : entre le code de votre espace et ta clé personnelle pour retrouver ta place et vos souvenirs.'),
+      code,
+      secret,
+      btn('Récupérer ma place', async () => {
+        if (!code.value.trim()) return code.focus();
+        if (!secret.value.trim()) return secret.focus();
+        const { error } = await sb.rpc('recover_couple', { c: code.value.trim(), s: secret.value.trim() });
+        if (error) return alert(error.message);
         main();
       }),
     ),
@@ -301,6 +316,19 @@ function showNous() {
       : h('p', { className: 'hint' }, 'En attente de ton/ta partenaire. Partage ce code pour l\u2019inviter.'),
     couple.b ? null : h('p', { className: 'code' }, couple.code),
     couple.b ? null : btn('Partager le code', () => share(couple.code)),
+  ));
+
+  // Se reconnecter un jour : code de l'espace + clé personnelle
+  const myKey = couple.a === user.id ? couple.key_a : couple.key_b;
+  cards.push(card(
+    h('p', { className: 'eyebrow' }, 'Me reconnecter'),
+    h('p', { className: 'hint' }, 'Sur un nouveau téléphone ou après un nettoyage du navigateur : entre ces deux codes à l\u2019écran Bienvenue pour retrouver ta place et vos souvenirs. Ta clé est personnelle, garde-la précieusement.'),
+    h('p', { className: 'label' }, 'Code de l\u2019espace'),
+    h('p', { className: 'code' }, couple.code),
+    h('p', { className: 'label' }, 'Ta clé personnelle'),
+    myKey
+      ? [h('p', { className: 'code small' }, myKey), btn('Copier ma clé', () => navigator.clipboard.writeText(myKey).then(() => alert('Clé copiée !')), 'ghost')]
+      : [h('p', { className: 'hint' }, 'N\u2019a pas encore été générée : ré-exécute le SQL de mise à jour (voir README).')],
   ));
 
   // Email de secours : un compte anonyme vit dans le navigateur

@@ -91,6 +91,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 3px
   letter-spacing: .35em; text-indent: .35em;
   text-shadow: 0 6px 24px #e5457e55;
 }
+.code.small { font-size: 1.4rem; letter-spacing: .25em; text-indent: .25em; }
 
 .label { margin: 1.1rem 0 .35rem; font-size: .76rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .label.me { text-align: right; }
