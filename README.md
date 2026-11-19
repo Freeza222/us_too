@@ -16,6 +16,7 @@ Pas de serveur : des fichiers statiques (`index.html`, `app.js`, `style.css`) + 
 
 - Une question par jour (la même pour les deux, change à minuit heure de Paris). La réponse de l'autre se dévoile quand tu as répondu.
 - Temps réel : dévoilement en direct, « c'est ton tour » quand l'autre a répondu, « Je pense à toi ».
+- Compagnon (onglet 🐾) : un petit animal dessiné (7 espèces, 9 couleurs, tenues tête/yeux/corps) dont vous vous occupez à deux : manger, câlin, jouer, bain, dodo. Chaque jauge se vide avec le temps ; il est joyeux, triste, sale ou endormi selon vos soins, et l'autre voit tout en direct. Il ne meurt jamais.
 - Souvenirs : les jours passés où tu as répondu (un jour sans ta réponse reste secret).
 - Compte : anonyme par défaut (lié au navigateur). Dans **Nous**, lier son email (code reçu par mail) permet de se reconnecter sur un autre appareil via « Déjà un compte ? » sur l'écran d'accueil.
 - Quitter l'espace : l'autre le garde avec vos réponses. Dissoudre : tout est supprimé.

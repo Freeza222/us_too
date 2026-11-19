@@ -122,11 +122,12 @@ nav {
 }
 nav[hidden] { display: none; }
 nav a {
-  display: inline-block; padding: .6rem 1rem; border-radius: 999px;
-  color: var(--muted); font-size: .85rem; font-weight: 800; text-decoration: none;
+  display: inline-block; padding: .6rem .7rem; border-radius: 999px; white-space: nowrap;
+  color: var(--muted); font-size: .8rem; font-weight: 800; text-decoration: none;
   transition: background .15s, color .15s;
 }
 nav a:hover { color: var(--rose); }
+@media (max-width: 370px) { nav a { padding: .55rem .5rem; font-size: .74rem; } }
 nav a[aria-current="page"] {
   color: #fff; background: linear-gradient(135deg, #ff7aa2, var(--rose) 55%, var(--rose-deep));
   box-shadow: 0 10px 22px -10px var(--rose-deep);
@@ -146,3 +147,66 @@ nav a[aria-current="page"] {
 @keyframes beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.18); } 30% { transform: scale(1); } }
 @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(4rem, 3rem) scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Compagnon partagé */
+.pet-stage { position: relative; width: min(15rem, 72vw); margin: 2.6rem auto .2rem; user-select: none; }
+.svg-wrap { display: block; line-height: 0; }
+.svg-wrap svg { width: 100%; height: auto; overflow: visible; }
+.pet-svg { animation: bob 2.8s ease-in-out infinite; transform-origin: 50% 100%; }
+.pet-svg .tail { transform-box: fill-box; transform-origin: 0% 100%; animation: wag 1.3s ease-in-out infinite alternate; }
+.pet-svg .blink { transform-box: fill-box; transform-origin: center; animation: blink 5s infinite; }
+.pet-svg .zzz text { animation: zzz 2.4s ease-in-out infinite; }
+.pet-svg .zzz text:nth-child(2) { animation-delay: .4s; } .pet-svg .zzz text:nth-child(3) { animation-delay: .8s; }
+.pet-svg.mood-dodo { animation-duration: 5s; }
+.pet-svg.mood-joie .tail { animation-duration: .45s; }
+.pet-stage.sad .pet-svg { filter: saturate(.55); animation-duration: 6s; }
+.pet-stage.hop .pet-svg { animation: hop .6s cubic-bezier(.3, 1.6, .5, 1); }
+.speech {
+  position: absolute; top: -2.3rem; left: 50%; transform: translateX(-50%); z-index: 1;
+  padding: .45rem .9rem; border-radius: 1rem; white-space: nowrap;
+  background: var(--field); border: 1.5px solid var(--ring); font-size: .85rem; font-weight: 700;
+}
+.speech::after {
+  content: ''; position: absolute; left: 50%; bottom: -7px; width: 12px; height: 12px;
+  background: var(--field); border: solid var(--ring); border-width: 0 1.5px 1.5px 0;
+  transform: translateX(-50%) rotate(45deg);
+}
+.burst { position: absolute; bottom: 45%; font-size: 1.6rem; pointer-events: none; animation: float-up 1.1s ease-out both; }
+.pet-name { margin: .2rem 0 1rem; text-align: center; }
+
+.care { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
+button.care-btn {
+  display: flex; flex-direction: column; align-items: center; gap: .3rem;
+  margin: 0; padding: .6rem .2rem .5rem; border-radius: 1rem;
+  background: var(--field); color: var(--text); box-shadow: none; border: 1.5px solid var(--ring);
+}
+button.care-btn:hover { box-shadow: none; border-color: var(--rose); }
+.care-icon { font-size: 1.5rem; line-height: 1; }
+.care-name { font-size: .68rem; font-weight: 800; }
+.bar { width: 80%; height: 6px; border-radius: 99px; background: var(--ring); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff7aa2, var(--rose)); transition: width .4s; }
+.bar i.low { background: #f59f00; }
+.dots { display: flex; gap: 3px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid var(--rose); }
+.dots i.on { background: var(--rose); }
+.duo { margin: .9rem 0 0; text-align: center; font-size: .82rem; }
+.duo strong { display: block; color: var(--rose); }
+
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: .45rem; }
+button.chip {
+  width: auto; margin: 0; padding: .4rem .55rem; font-size: 1.45rem; line-height: 1;
+  background: var(--field); box-shadow: none; border: 2px solid transparent; color: var(--text);
+}
+button.chip:hover { box-shadow: none; }
+button.chip[aria-pressed="true"] { border-color: var(--rose); background: var(--tint); }
+button.chip .svg-wrap { width: 2.6rem; }
+button.chip.swatch { width: 2.3rem; height: 2.3rem; padding: 0; border-radius: 50%; border: 3px solid var(--card); box-shadow: 0 0 0 1.5px var(--ring); }
+button.chip.swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--rose); }
+
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.5%) scale(1.015, .985); } }
+@keyframes wag { from { transform: rotate(-6deg); } to { transform: rotate(8deg); } }
+@keyframes blink { 0%, 94%, 100% { transform: scaleY(1); } 97% { transform: scaleY(.1); } }
+@keyframes zzz { 0%, 100% { opacity: .2; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-4px); } }
+@keyframes hop { 0% { transform: translateY(0); } 40% { transform: translateY(-14%) scale(.96, 1.05); } 100% { transform: translateY(0); } }
+@keyframes float-up { from { opacity: 1; transform: translateY(0) scale(.6); } to { opacity: 0; transform: translateY(-5rem) scale(1.2); } }
+@media (prefers-reduced-motion: reduce) { .burst { display: none; } }

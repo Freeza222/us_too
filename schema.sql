@@ -67,6 +67,34 @@ create policy "répondre aujourd'hui" on answers for insert with check (
   and couple_id in (select id from couples where auth.uid() in (a, b))
 );
 
+-- Compagnon partagé (onglet 🐾) : modifié uniquement via pet() ci-dessous
+alter table couples
+  add column pet_name  text  not null default 'Mochi' check (length(pet_name) between 1 and 20),
+  add column pet_style jsonb not null default '{}',  -- { kind, color, hat, eyes, body }
+  add column pet_care  jsonb not null default '{}';  -- { feed: { <uid>: date }, hug, play, wash, sleep }
+
+-- Une seule porte d'entrée : actions validées, horodatées par le serveur, fusion atomique
+-- (si vous agissez tous les deux en même temps, rien n'est écrasé)
+create or replace function pet(action text, val text default null) returns couples
+language plpgsql security definer set search_path = public as $$
+declare r couples;
+begin
+  if action in ('feed', 'hug', 'play', 'wash', 'sleep') then
+    update couples set pet_care = pet_care || jsonb_build_object(action,
+        coalesce(pet_care -> action, '{}') || jsonb_build_object(auth.uid()::text, now()))
+      where auth.uid() in (a, b) returning * into r;
+  elsif action in ('kind', 'color', 'hat', 'eyes', 'body') then
+    if length(coalesce(val, '')) > 20 then raise exception 'Valeur trop longue'; end if;
+    update couples set pet_style = pet_style || jsonb_build_object(action, coalesce(val, ''))
+      where auth.uid() in (a, b) returning * into r;
+  elsif action = 'name' then
+    update couples set pet_name = trim(val) where auth.uid() in (a, b) returning * into r;
+  else
+    raise exception 'Action inconnue : %', action;
+  end if;
+  return r;
+end $$;
+
 -- Temps réel (la RLS s'applique aussi : rien ne fuite avant dévoilement)
 alter publication supabase_realtime add table answers;
 alter publication supabase_realtime add table couples;
