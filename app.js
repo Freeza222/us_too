@@ -4,6 +4,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const SUPABASE_URL = 'https://njvatmicnmekplpkvppd.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_1A5R-PFEg8rN8lc5junI7Q_bbCIEbBB';
 
+const APP = 'Stand by me';
+
+// Ajoute des questions à la fin : celles déjà répondues sont enregistrées avec la réponse
 const QUESTIONS = [
   "Quel est ton meilleur souvenir avec moi ?",
   "Qu'est-ce qui t'a fait sourire aujourd'hui ?",
@@ -48,6 +51,11 @@ let view = 'jour';    // vue affichée : jour | souvenirs | nous
 let channel = null;   // canal Supabase Realtime
 let flashTimer = null;
 
+const here = location.origin + location.pathname; // où revenir après un lien reçu par email
+// Jour en heure de Paris au format AAAA-MM-JJ, comme la colonne "day" en base
+const todayParis = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Paris' });
+const questionFor = (day) => QUESTIONS[Math.floor(Date.parse(day) / 86400000) % QUESTIONS.length];
+
 // Mini helper DOM : les strings deviennent des text nodes → pas d'injection HTML.
 // Aplatit les tableaux de nodes et ignore null/false (branches de ternaires).
 const h = (tag, props = {}, ...kids) => {
@@ -67,12 +75,10 @@ const btn = (label, fn, className = '') => h('button', { className, onclick: asy
   e.target.disabled = true;
   try { await fn(); } finally { e.target.disabled = false; }
 } }, label);
+const emailInput = () => h('input', { type: 'email', placeholder: 'ton@email.fr', autocomplete: 'email', ariaLabel: 'Ton email' });
 const share = (code) => navigator.share
-  ? navigator.share({ text: `Rejoins-moi sur Nous deux 💞 Code : ${code}\n${location.href}` }).catch(() => {})
+  ? navigator.share({ text: `Rejoins-moi sur ${APP} 💞 Code : ${code}\n${here}` }).catch(() => {})
   : navigator.clipboard.writeText(code).then(() => alert('Code copié !'));
-
-// Même formule que la question du jour, réutilisée pour les souvenirs
-const questionFor = (day) => QUESTIONS[Math.floor(Date.parse(day) / 86400000) % QUESTIONS.length];
 
 const toast = (msg) => {
   const t = h('div', { className: 'toast', role: 'status' }, msg);
@@ -84,23 +90,22 @@ const toast = (msg) => {
 const alertes = (msg) => {
   navigator.vibrate?.([80, 40, 80]);
   if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
-    new Notification('Nous deux 💞', { body: msg });
+    new Notification(`${APP} 💞`, { body: msg });
   } else {
     toast(msg);
     if (document.hidden) flashTitle();
   }
 };
+const stopFlash = () => { clearInterval(flashTimer); flashTimer = null; document.title = APP; };
 const flashTitle = () => {
   if (flashTimer) return;
   let i = 0;
   flashTimer = setInterval(() => {
-    document.title = (i++ % 2) ? '💞 Une réponse t\u2019attend' : 'Nous deux';
-    if (i > 8) { clearInterval(flashTimer); flashTimer = null; document.title = 'Nous deux'; }
+    document.title = (i++ % 2) ? '💞 Une réponse t’attend' : APP;
+    if (i > 8) stopFlash();
   }, 900);
 };
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && flashTimer) { clearInterval(flashTimer); flashTimer = null; document.title = 'Nous deux'; }
-});
+document.addEventListener('visibilitychange', () => { if (!document.hidden && flashTimer) stopFlash(); });
 
 // Quitter/dissoudre : couper le canal Realtime et repartir de zéro
 async function resetSession() {
@@ -131,30 +136,35 @@ const route = () => {
 };
 addEventListener('hashchange', () => { if (couple) route(); });
 
-// Temps réel : canal par couple, une fois l'espace créé
-function listen(couples, me) {
+// Temps réel : un canal par couple
+// ponytail: canal public (il faut connaître l'id du couple pour l'écouter). Canal privé Supabase si besoin.
+function listen(c) {
   if (channel) return;
-  channel = sb.channel(`nous-deux-${couples.id}`)
-    // Jeu conjoint : le partenaire arrive ou part → tout se recharge
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'couples', filter: `id=eq.${couples.id}` }, (payload) => {
-      if (payload.new.b !== couple.b) {
-        couple = payload.new;
-        alertes(couple.b ? 'Ton/ta partenaire a rejoint 💞' : 'Ton/ta partenaire a quitté l\u2019espace');
-        main();
-      }
+  channel = sb.channel(`couple-${c.id}`)
+    // Le partenaire arrive ou part → tout se recharge
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'couples', filter: `id=eq.${c.id}` }, (payload) => {
+      if (payload.new.b === couple?.b) return;
+      alertes(payload.new.b ? 'Ton/ta partenaire a rejoint 💞' : 'Ton/ta partenaire a quitté l’espace');
+      main();
+    })
+    // Le partenaire a dissous l'espace (les DELETE ne sont pas filtrables : on compare l'id)
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'couples' }, async (payload) => {
+      if (payload.old?.id !== couple?.id) return;
+      alertes('Votre espace a été dissous');
+      await resetSession();
+      main();
     })
     // "Je pense à toi" : bulle instantanée
     .on('broadcast', { event: 'nudge' }, () => alertes('Ton/ta partenaire pense à toi 💭'))
-    // Le partenaire vient de répondre (RLS me masque encore sa réponse) : c'est mon tour
+    // Le partenaire vient de répondre (la RLS me masque encore sa réponse) : c'est mon tour
     .on('broadcast', { event: 'answered' }, () => {
-      const ta = app.querySelector('textarea');
-      if (document.activeElement === ta) return toast('Ton/ta partenaire a répondu 💞 Tu verras la mise à jour après l\u2019envoi');
-      alertes('C\u2019est ton tour ! Ton/ta partenaire a répondu 💞');
+      if (document.activeElement === app.querySelector('textarea')) return toast('Ton/ta partenaire a répondu 💞');
+      alertes('C’est ton tour ! Ton/ta partenaire a répondu 💞');
       if (view === 'jour') showToday();
     })
-    // Nouvelle réponse que je peux voir (j'ai répondu en premier) : dévoilement en direct
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'answers', filter: `couple_id=eq.${couples.id}` }, (payload) => {
-      if (payload.new.user_id === me.id) return;
+    // Nouvelle réponse que je peux voir (j'avais répondu en premier) : dévoilement en direct
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'answers', filter: `couple_id=eq.${c.id}` }, (payload) => {
+      if (payload.new.user_id === user.id) return;
       if (document.hidden) alertes('Vos réponses du jour se sont dévoilées 💞');
       if (view === 'jour') showToday();
     })
@@ -162,7 +172,7 @@ function listen(couples, me) {
 }
 
 async function main() {
-  // Compte anonyme lié au navigateur (vider les données = perdre le couple). À relier par email dans Nous.
+  // Session existante (ou revenue d'un lien email), sinon compte anonyme lié au navigateur
   const { data: { session } } = await sb.auth.getSession();
   user = session?.user ?? null;
   if (!user) {
@@ -171,57 +181,49 @@ async function main() {
     user = data.user;
   }
 
-  const { data: couples, error } = await sb.from('couples').select('*').limit(1);
+  const { data, error } = await sb.from('couples').select('id, code, a, b').limit(1);
   if (error) return fail(error);
-  couple = couples[0] ?? null;
+  couple = data[0] ?? null;
 
-  // Auto-réparation : si ma clé personnelle n'existe pas encore (compte inscrit
-  // avant la mise à jour SQL), le serveur la génère, puis on relit la ligne.
-  if (couple && !((couple.a === user.id && couple.key_a) || (couple.b === user.id && couple.key_b))) {
-    await sb.rpc('ensure_my_key').catch(() => {});
-    const { data: fresh } = await sb.from('couples').select('*').limit(1);
-    if (fresh?.length) couple = fresh[0];
-  }
-
-  if (!couple) { setTabs(false); return showPairing(user.id); }
-  listen(couple, user);
+  if (!couple) { setTabs(false); return showPairing(); }
+  listen(couple);
   route();
 }
 
-function showPairing(me) {
-  const input = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code du partenaire' });
-  const code = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code de votre espace' });
-  const secret = h('input', { className: 'code-input', placeholder: 'CLÉ…', maxLength: 10, autocomplete: 'off', ariaLabel: 'Ta clé de reconnexion' });
+function showPairing() {
+  const code = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code du partenaire' });
+  const email = emailInput();
   show(
     card(
       h('p', { className: 'eyebrow' }, 'Bienvenue'),
       h('p', { className: 'question' }, 'Une question par jour, rien que pour vous deux.'),
       h('p', { className: 'hint' }, 'Vous répondez chacun de votre côté, et la réponse de l\'autre se dévoile quand vous avez répondu.'),
       btn('Créer notre espace', async () => {
-        const { error } = await sb.from('couples').insert({ a: me });
+        const { error } = await sb.from('couples').insert({ a: user.id });
         error ? alert(error.message) : main();
       }),
     ),
     card(
       h('p', { className: 'eyebrow' }, 'Tu as reçu un code ?'),
-      input,
+      code,
       btn('Rejoindre', async () => {
-        const { data, error } = await sb.rpc('join_couple', { c: input.value.trim() });
+        const { data, error } = await sb.rpc('join_couple', { c: code.value.trim() });
         if (error || !data) return alert(error?.message ?? 'Code invalide ou déjà utilisé');
         main();
       }),
     ),
     card(
-      h('p', { className: 'eyebrow' }, 'Tu te reconnectes ?'),
-      h('p', { className: 'hint' }, 'Après un changement de téléphone ou un nettoyage du navigateur : entre le code de votre espace et ta clé personnelle pour retrouver ta place et vos souvenirs.'),
-      code,
-      secret,
-      btn('Récupérer ma place', async () => {
-        if (!code.value.trim()) return code.focus();
-        if (!secret.value.trim()) return secret.focus();
-        const { error } = await sb.rpc('recover_couple', { c: code.value.trim(), s: secret.value.trim() });
-        if (error) return alert(error.message);
-        main();
+      h('p', { className: 'eyebrow' }, 'Déjà un compte ?'),
+      h('p', { className: 'hint' }, 'Nouveau téléphone ou navigateur vidé ? Si tu avais lié ton email (onglet Nous), reçois un lien pour retrouver ton espace et vos souvenirs.'),
+      email,
+      btn('Recevoir le lien', async () => {
+        if (!email.value.trim()) return email.focus();
+        const { error } = await sb.auth.signInWithOtp({
+          email: email.value.trim(),
+          options: { shouldCreateUser: false, emailRedirectTo: here },
+        });
+        if (error) return alert(/signups not allowed/i.test(error.message) ? 'Aucun compte lié à cet email' : error.message);
+        alert('Lien envoyé 💌 Ouvre-le sur cet appareil.');
       }),
     ),
   );
@@ -237,141 +239,126 @@ function showWaiting() {
   ));
 }
 
-function showToday() {
-  const me = user.id;
-  const today = new Date().toISOString().slice(0, 10); // UTC, comme current_date côté Supabase
-  const question = questionFor(today);
-  const dateLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+async function showToday() {
+  if (!couple.b) return showWaiting();
+  const today = todayParis();
+  const dateLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' });
 
-  return sb.from('answers').select('user_id, text').eq('couple_id', couple.id).eq('day', today)
-    .then(({ data: answers, error }) => {
-      if (error) return fail(error);
-      if (!couple.b) return showWaiting();
+  const { data: answers, error } = await sb.from('answers')
+    .select('user_id, question, text').eq('couple_id', couple.id).eq('day', today);
+  if (error) return fail(error);
 
-      const mine = answers.find((a) => a.user_id === me);
-      const theirs = answers.find((a) => a.user_id !== me);
-      const head = [h('p', { className: 'eyebrow' }, dateLabel), h('p', { className: 'question' }, question)];
-      const nudge = btn('Je pense à toi 💭', async () => {
-        if (!channel) return toast('Recharge la page pour activer le temps réel');
-        await channel.send({ type: 'broadcast', event: 'nudge', payload: { from: me } });
-        toast('Envoyé 💞');
-      }, 'ghost');
+  const mine = answers.find((a) => a.user_id === user.id);
+  const theirs = answers.find((a) => a.user_id !== user.id);
+  const question = mine?.question ?? questionFor(today);
+  const head = [h('p', { className: 'eyebrow' }, dateLabel), h('p', { className: 'question' }, question)];
+  const nudge = btn('Je pense à toi 💭', async () => {
+    await channel.send({ type: 'broadcast', event: 'nudge', payload: {} });
+    toast('Envoyé 💞');
+  }, 'ghost');
 
-      if (!mine) {
-        const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
-        return show(card(
-          ...head, ta,
-          btn('Envoyer 💌', async () => {
-            if (!ta.value.trim()) return ta.focus();
-            const { error } = await sb.from('answers').insert({ couple_id: couple.id, text: ta.value.trim() });
-            if (error) return alert(error.message);
-            channel?.send({ type: 'broadcast', event: 'answered', payload: {} });
-            main();
-          }),
-          h('p', { className: 'label' }, 'Ton/ta partenaire'),
-          h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
-          nudge,
-        ));
-      }
+  if (!mine) {
+    const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
+    return show(card(
+      ...head, ta,
+      btn('Envoyer 💌', async () => {
+        if (!ta.value.trim()) return ta.focus();
+        const { error } = await sb.from('answers').insert({ couple_id: couple.id, question, text: ta.value.trim() });
+        if (error) return alert(error.message);
+        channel.send({ type: 'broadcast', event: 'answered', payload: {} });
+        showToday();
+      }),
+      h('p', { className: 'label' }, 'Ton/ta partenaire'),
+      h('div', { className: 'bubble locked' }, '🔒 Sa réponse se dévoile quand tu as répondu'),
+      nudge,
+    ));
+  }
 
-      show(card(
-        ...head,
-        h('p', { className: 'label me' }, 'Toi'),
-        h('div', { className: 'bubble mine' }, mine.text),
-        h('p', { className: 'label' }, 'Ton/ta partenaire'),
-        theirs
-          ? h('div', { className: 'bubble theirs' }, theirs.text)
-          : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
-        theirs
-          ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞')
-          : btn('Actualiser', showToday, 'ghost'),
-        nudge,
-      ));
-    });
+  show(card(
+    ...head,
+    h('p', { className: 'label me' }, 'Toi'),
+    h('div', { className: 'bubble mine' }, mine.text),
+    h('p', { className: 'label' }, 'Ton/ta partenaire'),
+    theirs
+      ? h('div', { className: 'bubble theirs' }, theirs.text)
+      : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
+    theirs
+      ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞')
+      : btn('Actualiser', showToday, 'ghost'),
+    nudge,
+  ));
 }
 
 async function showSouvenirs() {
   // La RLS ne renvoie que les jours où tu as répondu : leur réponse d'un jour sans la tienne reste secrète
+  // ponytail: 120 dernières réponses (~2 mois), pagination si l'historique grossit
   const { data, error } = await sb.from('answers')
-    .select('user_id, day, text').eq('couple_id', couple.id)
+    .select('user_id, day, question, text').eq('couple_id', couple.id)
     .order('day', { ascending: false }).limit(120);
   if (error) return fail(error);
 
   const days = [];
   for (const row of data) {
     let d = days.at(-1);
-    if (!d || d.day !== row.day) { d = { day: row.day, mine: null, theirs: null }; days.push(d); }
+    if (!d || d.day !== row.day) { d = { day: row.day, question: null, mine: null, theirs: null }; days.push(d); }
+    d.question ??= row.question;
     if (row.user_id === user.id) d.mine = row.text; else d.theirs = row.text;
   }
 
-  const out = days.length ? days.map((d) => {
-        const kids = [
-          h('p', { className: 'eyebrow' }, new Date(d.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })),
-          h('p', { className: 'question' }, questionFor(d.day)),
-        ];
-        if (d.mine) kids.push(h('p', { className: 'label me' }, 'Toi'), h('div', { className: 'bubble mine' }, d.mine));
-        kids.push(h('p', { className: 'label' }, 'Ton/ta partenaire'));
-        kids.push(d.theirs
-          ? h('div', { className: 'bubble theirs' }, d.theirs)
-          : h('div', { className: 'bubble locked' }, 'Pas de réponse ce jour-là'));
-        return card(...kids);
-      })
-    : [card(
-        h('p', { className: 'eyebrow' }, 'Nos souvenirs'),
-        h('p', { className: 'hint' }, 'Pas encore de souvenirs — réponds à la question du jour, ils apparaîtront ici.'),
-      )];
-  show(...out);
+  if (!days.length) return show(card(
+    h('p', { className: 'eyebrow' }, 'Nos souvenirs'),
+    h('p', { className: 'hint' }, 'Pas encore de souvenirs : réponds à la question du jour, ils apparaîtront ici.'),
+  ));
+
+  show(...days.map((d) => card(
+    h('p', { className: 'eyebrow' }, new Date(d.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })),
+    h('p', { className: 'question' }, d.question ?? questionFor(d.day)), // anciennes réponses sans question enregistrée
+    d.mine && [h('p', { className: 'label me' }, 'Toi'), h('div', { className: 'bubble mine' }, d.mine)],
+    h('p', { className: 'label' }, 'Ton/ta partenaire'),
+    d.theirs
+      ? h('div', { className: 'bubble theirs' }, d.theirs)
+      : h('div', { className: 'bubble locked' }, 'Pas de réponse ce jour-là'),
+  )));
 }
 
 function showNous() {
   const cards = [];
 
-  // Notre espace : code, partenaire
+  // Notre espace
   cards.push(card(
     h('p', { className: 'eyebrow' }, 'Notre espace'),
     couple.b
       ? h('p', { className: 'hint' }, 'Votre espace est complet, les réponses se dévoilent à deux.')
-      : h('p', { className: 'hint' }, 'En attente de ton/ta partenaire. Partage ce code pour l\u2019inviter.'),
-    couple.b ? null : h('p', { className: 'code' }, couple.code),
-    couple.b ? null : btn('Partager le code', () => share(couple.code)),
+      : [
+          h('p', { className: 'hint' }, 'En attente de ton/ta partenaire. Partage ce code pour l’inviter.'),
+          h('p', { className: 'code' }, couple.code),
+          btn('Partager le code', () => share(couple.code)),
+        ],
   ));
 
-  // Se reconnecter un jour : code de l'espace + clé personnelle
-  const myKey = couple.a === user.id ? couple.key_a : couple.b === user.id ? couple.key_b : null;
-  cards.push(card(
-    h('p', { className: 'eyebrow' }, 'Me reconnecter'),
-    h('p', { className: 'hint' }, 'Sur un nouveau téléphone ou après un nettoyage du navigateur : entre ces deux codes à l\u2019écran Bienvenue pour retrouver ta place et vos souvenirs. Ta clé est personnelle, garde-la précieusement.'),
-    h('p', { className: 'label' }, 'Code de l\u2019espace'),
-    h('p', { className: 'code' }, couple.code),
-    h('p', { className: 'label' }, 'Ta clé personnelle'),
-    myKey
-      ? [h('p', { className: 'code small' }, myKey), btn('Copier ma clé', () => navigator.clipboard.writeText(myKey).then(() => alert('Clé copiée !')), 'ghost')]
-      : [h('p', { className: 'hint' }, 'N\u2019a pas encore été générée : ré-exécute le SQL de mise à jour (voir README).')],
-  ));
-
-  // Email de secours : un compte anonyme vit dans le navigateur
+  // Email : seul moyen de retrouver sa place sur un autre appareil
   const security = card(h('p', { className: 'eyebrow' }, 'Sécuriser nos souvenirs'));
   if (user.is_anonymous) {
-    const emailInput = h('input', { type: 'email', placeholder: 'ton@email.fr', autocomplete: 'email', ariaLabel: 'Ton email' });
+    const email = emailInput();
     security.append(
-      h('p', { className: 'hint' }, 'Ton compte est lié à ce navigateur : si ses données sont vidées, vos réponses partent avec. Ajoute un email pour les retrouver.'),
-      emailInput,
+      h('p', { className: 'hint' }, 'Ton compte vit dans ce navigateur : s’il est vidé, tu perds ta place. Lie ton email pour pouvoir te reconnecter depuis n’importe quel appareil.'),
+      email,
       btn('Lier mon email', async () => {
-        if (!emailInput.value.trim()) return emailInput.focus();
-        const { error } = await sb.auth.updateUser({ email: emailInput.value.trim() });
+        if (!email.value.trim()) return email.focus();
+        const { error } = await sb.auth.updateUser({ email: email.value.trim() }, { emailRedirectTo: here });
         if (error) return alert(error.message);
-        alert('Vérifie ta boîte mail pour confirmer 💞');
+        alert('Clique sur le lien reçu par email pour confirmer 💌');
       }),
     );
   } else {
-    security.append(h('p', { className: 'hint' }, `Compte relié à ${user.email ?? 'ton email'} ✓ Tes souvenirs survivent à un nettoyage du navigateur.`));
+    security.append(h('p', { className: 'hint' }, `Compte relié à ${user.email} ✓ Sur un autre appareil : écran d’accueil → « Déjà un compte ? ».`));
   }
   cards.push(security);
 
   // Notifications
   cards.push(card(
     h('p', { className: 'eyebrow' }, 'Alertes'),
-    h('p', { className: 'hint' }, 'Sois prévenu·e quand ton/ta partenaire te pense à toi ou a répondu.'),
+    h('p', { className: 'hint' }, 'Sois prévenu·e quand ton/ta partenaire pense à toi ou a répondu (quand l’app est ouverte).'),
     btn('Activer les notifications', async () => {
       if (!('Notification' in window)) return toast('Notifications non supportées par ce navigateur');
       const p = await Notification.requestPermission();
@@ -379,34 +366,27 @@ function showNous() {
     }),
   ));
 
-  // La suite à venir
   cards.push(card(
     h('p', { className: 'eyebrow' }, 'Bientôt'),
     h('p', { className: 'hint' }, 'Questions personnalisées · Petites statistiques douces · Lettres à ouvrir plus tard…'),
   ));
 
-  // Quitter la session : l'espace reste à l'autre, ou dissolution complète
-  const session = card(
-    h('p', { className: 'eyebrow' }, 'Session'),
-    couple.b
-      ? h('p', { className: 'hint' }, 'Partir de cet espace ? Il restera à ton/ta partenaire, avec toutes vos réponses. Tu pourras en créer un autre ou en rejoindre un autre.')
-      : h('p', { className: 'hint' }, 'Abandonner cet espace le supprimera (il n\u2019a pas encore de partenaire).'),
-    btn('Quitter l\u2019espace', async () => {
-      if (!confirm('Quitter cet espace ? Ton/ta partenaire gardera vos réponses.')) return;
-      const { error } = await sb.rpc('leave_couple');
-      if (error) return alert(error.message);
-      await resetSession();
-      main();
-    }, 'ghost danger'),
-  );
-  if (couple.b) session.append(btn('Dissoudre (tout supprimer)', async () => {
-    if (!confirm('Supprimer définitivement l\u2019espace et toutes vos réponses ? Action irréversible.')) return;
-    const { error } = await sb.rpc('dissolve_couple');
-    if (error) return alert(error.message);
+  // Quitter : l'espace reste à l'autre ; Dissoudre : tout est supprimé
+  const leave = async (rpc, question) => {
+    if (!confirm(question)) return;
     await resetSession();
+    const { error } = await sb.rpc(rpc);
+    if (error) alert(error.message);
     main();
-  }, 'ghost danger'));
-  cards.push(session);
+  };
+  cards.push(card(
+    h('p', { className: 'eyebrow' }, 'Session'),
+    h('p', { className: 'hint' }, couple.b
+      ? 'Partir de cet espace ? Il restera à ton/ta partenaire, avec toutes vos réponses.'
+      : 'Abandonner cet espace le supprimera (il n’a pas encore de partenaire).'),
+    btn('Quitter l’espace', () => leave('leave_couple', 'Quitter cet espace ?'), 'ghost danger'),
+    couple.b && btn('Dissoudre (tout supprimer)', () => leave('dissolve_couple', 'Supprimer définitivement l’espace et toutes vos réponses ? Action irréversible.'), 'ghost danger'),
+  ));
 
   show(...cards);
 }
