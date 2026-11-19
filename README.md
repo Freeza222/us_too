@@ -9,14 +9,15 @@ Pas de serveur : des fichiers statiques (`index.html`, `app.js`, `style.css`) + 
 2. **SQL Editor** → colle `schema.sql` → **Run**
 3. **Authentication → Sign In / Providers** → active **Allow anonymous sign-ins**
 4. **Authentication → URL Configuration** → **Site URL** = l'adresse du site (ex. `https://<pseudo>.github.io/<repo>/`), et ajoute-la aussi dans **Redirect URLs** suivie de `**` (ex. `https://<pseudo>.github.io/<repo>/**`, plus `http://localhost:8000/**` pour tester en local). Sans ça, les liens reçus par email renvoient vers `localhost:3000`.
-5. **Project Settings → API Keys** → copie l'URL et la clé publishable/anon en haut de `app.js`.
+5. **Authentication → Emails → Templates** : dans **Magic Link** et **Change Email Address**, ajoute `<p>Ton code : <strong>{{ .Token }}</strong></p>`. L'app demande ce code (un lien s'ouvrirait dans le navigateur, pas dans l'app installée sur l'écran d'accueil).
+6. **Project Settings → API Keys** → copie l'URL et la clé publishable/anon en haut de `app.js`.
 
 ## Ce que l'app fait
 
 - Une question par jour (la même pour les deux, change à minuit heure de Paris). La réponse de l'autre se dévoile quand tu as répondu.
 - Temps réel : dévoilement en direct, « c'est ton tour » quand l'autre a répondu, « Je pense à toi ».
 - Souvenirs : les jours passés où tu as répondu (un jour sans ta réponse reste secret).
-- Compte : anonyme par défaut (lié au navigateur). Dans **Nous**, lier son email permet de se reconnecter sur un autre appareil via « Déjà un compte ? » sur l'écran d'accueil.
+- Compte : anonyme par défaut (lié au navigateur). Dans **Nous**, lier son email (code reçu par mail) permet de se reconnecter sur un autre appareil via « Déjà un compte ? » sur l'écran d'accueil.
 - Quitter l'espace : l'autre le garde avec vos réponses. Dissoudre : tout est supprimé.
 
 ## Tester en local

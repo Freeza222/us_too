@@ -76,6 +76,22 @@ const btn = (label, fn, className = '') => h('button', { className, onclick: asy
   try { await fn(); } finally { e.target.disabled = false; }
 } }, label);
 const emailInput = () => h('input', { type: 'email', placeholder: 'ton@email.fr', autocomplete: 'email', ariaLabel: 'Ton email' });
+// Code reçu par email, tapé dans l'app : marche aussi dans l'app installée sur l'écran d'accueil
+// (un lien, lui, s'ouvrirait dans le navigateur, qui ne partage pas la connexion avec l'app)
+const codeStep = (parent, email, type) => {
+  parent.querySelector('.otp')?.remove();
+  const code = h('input', { className: 'code-input', inputMode: 'numeric', autocomplete: 'one-time-code', maxLength: 10, placeholder: '123456', ariaLabel: 'Code reçu par email' });
+  parent.append(h('div', { className: 'otp' },
+    h('p', { className: 'hint' }, `Code envoyé à ${email} 💌 (regarde aussi les spams)`),
+    code,
+    btn('Valider le code', async () => {
+      const { error } = await sb.auth.verifyOtp({ email, token: code.value.trim(), type });
+      if (error) return alert('Code invalide ou expiré');
+      main();
+    }),
+  ));
+  code.focus();
+};
 const share = (code) => navigator.share
   ? navigator.share({ text: `Rejoins-moi sur ${APP} 💞 Code : ${code}\n${here}` }).catch(() => {})
   : navigator.clipboard.writeText(code).then(() => alert('Code copié !'));
@@ -175,6 +191,11 @@ async function main() {
   // Session existante (ou revenue d'un lien email), sinon compte anonyme lié au navigateur
   const { data: { session } } = await sb.auth.getSession();
   user = session?.user ?? null;
+  // Email confirmé ailleurs (lien ouvert dans le navigateur) : on récupère le compte à jour
+  if (user?.is_anonymous) {
+    const { data } = await sb.auth.refreshSession();
+    if (data?.user) user = data.user;
+  }
   if (!user) {
     const { data, error } = await sb.auth.signInAnonymously();
     if (error) return fail(error);
@@ -193,6 +214,7 @@ async function main() {
 function showPairing() {
   const code = h('input', { className: 'code-input', placeholder: 'ABC123', maxLength: 6, autocomplete: 'off', ariaLabel: 'Code du partenaire' });
   const email = emailInput();
+  const login = card();
   show(
     card(
       h('p', { className: 'eyebrow' }, 'Bienvenue'),
@@ -212,20 +234,21 @@ function showPairing() {
         main();
       }),
     ),
-    card(
+    login,
+  );
+  login.append(
       h('p', { className: 'eyebrow' }, 'Déjà un compte ?'),
-      h('p', { className: 'hint' }, 'Nouveau téléphone ou navigateur vidé ? Si tu avais lié ton email (onglet Nous), reçois un lien pour retrouver ton espace et vos souvenirs.'),
+      h('p', { className: 'hint' }, 'Nouveau téléphone ou navigateur vidé ? Si tu avais lié ton email (onglet Nous), reçois un code pour retrouver ton espace et vos souvenirs.'),
       email,
-      btn('Recevoir le lien', async () => {
+      btn('Recevoir le code', async () => {
         if (!email.value.trim()) return email.focus();
         const { error } = await sb.auth.signInWithOtp({
           email: email.value.trim(),
           options: { shouldCreateUser: false, emailRedirectTo: here },
         });
         if (error) return alert(/signups not allowed/i.test(error.message) ? 'Aucun compte lié à cet email' : error.message);
-        alert('Lien envoyé 💌 Ouvre-le sur cet appareil.');
+        codeStep(login, email.value.trim(), 'email');
       }),
-    ),
   );
 }
 
@@ -347,7 +370,7 @@ function showNous() {
         if (!email.value.trim()) return email.focus();
         const { error } = await sb.auth.updateUser({ email: email.value.trim() }, { emailRedirectTo: here });
         if (error) return alert(error.message);
-        alert('Clique sur le lien reçu par email pour confirmer 💌');
+        codeStep(security, email.value.trim(), 'email_change');
       }),
     );
   } else {
