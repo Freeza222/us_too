@@ -210,3 +210,23 @@ button.chip.swatch[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--rose); }
 @keyframes hop { 0% { transform: translateY(0); } 40% { transform: translateY(-14%) scale(.96, 1.05); } 100% { transform: translateY(0); } }
 @keyframes float-up { from { opacity: 1; transform: translateY(0) scale(.6); } to { opacity: 0; transform: translateY(-5rem) scale(1.2); } }
 @media (prefers-reduced-motion: reduce) { .burst { display: none; } }
+
+/* Série, mode devine, questions perso */
+.streak { margin: -.1rem 0 .6rem; font-weight: 800; color: #e8590c; }
+.streak small { display: block; font-weight: 600; font-size: .78rem; color: var(--muted); }
+.tag { display: inline-block; margin: 0 0 .6rem; padding: .3rem .7rem; border-radius: 99px; background: var(--tint); color: var(--rose); font-size: .8rem; font-weight: 800; }
+.guess { margin-top: .6rem; padding-top: .4rem; border-top: 1.5px dashed var(--ring); }
+.verdict { margin: .5rem 0 0; font-weight: 800; color: var(--rose); }
+.verdict.me { text-align: right; }
+.center { text-align: center; }
+.guess-line { margin: .5rem 0 0; font-size: .85rem; color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; text-align: center; }
+.stat { padding: .7rem .3rem; border-radius: 1rem; background: var(--field); }
+.stat strong { display: block; font-size: 1.3rem; }
+.stat span { font-size: .72rem; color: var(--muted); font-weight: 700; }
+.qlist { list-style: none; margin: .3rem 0 0; padding: 0; }
+.qlist li { display: flex; align-items: center; gap: .5rem; padding: .5rem 0; border-bottom: 1px solid var(--ring); }
+.qlist li span { flex: 1; }
+button.x { width: auto; margin: 0; padding: .3rem .6rem; }
+button.chip.locked { opacity: .45; filter: grayscale(.6); position: relative; }
+button.chip.locked::after { content: '🔒'; position: absolute; right: -4px; bottom: -4px; font-size: .75rem; filter: none; }

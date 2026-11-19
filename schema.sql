@@ -13,6 +13,8 @@ create table answers (
   day       date not null default (now() at time zone 'Europe/Paris')::date,
   question  text check (length(question) <= 500), -- figée au moment de répondre
   text      text not null check (length(text) between 1 and 2000),
+  guess     text check (length(guess) <= 2000),  -- mode devine : ce que tu penses que l'autre va répondre
+  guess_ok  boolean,                             -- verdict de l'autre (via judge_guess)
   primary key (couple_id, user_id, day)
 );
 
@@ -64,6 +66,7 @@ create policy "lire les réponses" on answers for select using (
 create policy "répondre aujourd'hui" on answers for insert with check (
   user_id = auth.uid()
   and day = (now() at time zone 'Europe/Paris')::date
+  and guess_ok is null                                   -- on ne se donne pas les points soi-même
   and couple_id in (select id from couples where auth.uid() in (a, b))
 );
 
@@ -92,6 +95,87 @@ begin
   else
     raise exception 'Action inconnue : %', action;
   end if;
+  return r;
+end $$;
+
+-- Mode devine 🎯, série 🔥 et vos propres questions 💌
+-- L'autre juge ta devinette (et toi la sienne), seulement une fois les réponses dévoilées
+create or replace function judge_guess(d date, ok boolean) returns void
+language sql security definer set search_path = public as $$
+  update answers set guess_ok = ok
+  where day = d and guess is not null and user_id <> auth.uid()
+    and couple_id in (select id from couples where auth.uid() in (a, b))
+    and has_answered(couple_id, d);
+$$;
+
+-- 2. Série et jours à deux (jours où vous avez répondu tous les deux) : débloquent les tenues
+create or replace function couple_stats() returns json
+language sql stable security definer set search_path = public as $$
+  with c as (select id from couples where auth.uid() in (a, b) limit 1),
+  d as (select day from answers where couple_id = (select id from c)
+        group by day having count(distinct user_id) = 2),
+  g as (select day, day - (row_number() over (order by day))::int as grp from d),
+  runs as (select max(day) as fin, count(*) as n from g group by grp)
+  select json_build_object(
+    'total',  (select count(*) from d),
+    'best',   coalesce((select max(n) from runs), 0),
+    -- la série tient tant que le dernier jour à deux est aujourd'hui ou hier
+    'streak', coalesce((select n from runs where fin >= (now() at time zone 'Europe/Paris')::date - 1), 0),
+    'today',  exists (select 1 from d where day = (now() at time zone 'Europe/Paris')::date));
+$$;
+
+-- 3. Vos propres questions : une par jour, avant celles de l'app (sauf le dimanche, jour du mode devine)
+create table if not exists custom_questions (
+  id         uuid primary key default gen_random_uuid(),
+  couple_id  uuid not null references couples on delete cascade,
+  author     uuid not null default auth.uid() references auth.users on delete cascade,
+  text       text not null check (length(trim(text)) between 3 and 300),
+  created_at timestamptz not null default now(),
+  used_on    date                                  -- jour où elle est tombée
+);
+alter table custom_questions enable row level security;
+
+-- Tu vois les tiennes ; celles de l'autre restent une surprise jusqu'à ce qu'elles tombent
+create policy "voir nos questions" on custom_questions for select using (
+  couple_id in (select id from couples where auth.uid() in (a, b))
+  and (author = auth.uid() or used_on is not null)
+);
+create policy "ajouter une question" on custom_questions for insert with check (
+  author = auth.uid() and used_on is null
+  and couple_id in (select id from couples where auth.uid() in (a, b))
+);
+create policy "retirer sa question" on custom_questions for delete
+  using (author = auth.uid() and used_on is null);
+
+-- Combien de questions attendent, de chaque côté (sans rien révéler de celles de l'autre)
+create or replace function pending_questions() returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object(
+    'mine',   count(*) filter (where author = auth.uid()),
+    'theirs', count(*) filter (where author <> auth.uid()))
+  from custom_questions
+  where used_on is null and couple_id in (select id from couples where auth.uid() in (a, b));
+$$;
+
+-- La question perso du jour : tirée une seule fois par jour, la même pour vous deux
+create or replace function todays_custom() returns custom_questions
+language plpgsql security definer set search_path = public as $$
+declare
+  cid   uuid;
+  today date := (now() at time zone 'Europe/Paris')::date;
+  r     custom_questions;
+begin
+  select id into cid from couples where auth.uid() in (a, b) limit 1;
+  if cid is null then return null; end if;
+  perform pg_advisory_xact_lock(hashtext(cid::text));      -- vous deux en même temps → un seul tirage
+  select * into r from custom_questions where couple_id = cid and used_on = today;
+  if found then return r; end if;
+  -- quelqu'un a déjà répondu à la question de l'app aujourd'hui : on ne change pas en cours de route
+  if exists (select 1 from answers where couple_id = cid and day = today) then return null; end if;
+  update custom_questions set used_on = today
+    where id = (select id from custom_questions where couple_id = cid and used_on is null
+                order by created_at limit 1)
+    returning * into r;
   return r;
 end $$;
 

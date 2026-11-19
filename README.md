@@ -15,6 +15,10 @@ Pas de serveur : des fichiers statiques (`index.html`, `app.js`, `style.css`) + 
 ## Ce que l'app fait
 
 - Une question par jour (la même pour les deux, change à minuit heure de Paris). La réponse de l'autre se dévoile quand tu as répondu.
+- Série 🔥 : jours d'affilée où vous avez répondu tous les deux (record et total dans Souvenirs).
+- Tenues à gagner : les tenues du compagnon se débloquent avec le nombre de jours à deux (liste `jours:` dans `TETE`, `YEUX`, `CORPS` de `app.js`).
+- Mode devine 🎯 : le dimanche, chacun répond pour soi et devine la réponse de l'autre, puis valide (ou non) la devinette de l'autre. Score dans Souvenirs.
+- Nos questions 💌 (onglet Nous) : vos propres questions passent avant celles de l'app, une par jour (sauf le dimanche). Celles de l'autre restent une surprise.
 - Temps réel : dévoilement en direct, « c'est ton tour » quand l'autre a répondu, « Je pense à toi ».
 - Compagnon (onglet 🐾) : un petit animal dessiné (7 espèces, 9 couleurs, tenues tête/yeux/corps) dont vous vous occupez à deux : manger, câlin, jouer, bain, dodo. Chaque jauge se vide avec le temps ; il est joyeux, triste, sale ou endormi selon vos soins, et l'autre voit tout en direct. Il ne meurt jamais.
 - Souvenirs : les jours passés où tu as répondu (un jour sans ta réponse reste secret).

@@ -40,6 +40,27 @@ const QUESTIONS = [
   "Qu'est-ce que tu voudrais me dire mais n'as jamais osé ?",
 ];
 
+// Mode devine 🎯 (le dimanche) : chacun répond pour soi ET devine la réponse de l'autre
+const DEVINE = [
+  "Quel est ton plat préféré en ce moment ?",
+  "Quelle chanson tu écoutes en boucle ces temps-ci ?",
+  "Dans quel pays rêves-tu de partir ?",
+  "Que ferais-tu d'une journée entière sans obligations ?",
+  "Quel est ton film réconfort ?",
+  "Quelle est ta plus grande peur un peu ridicule ?",
+  "Quel super-pouvoir choisirais-tu ?",
+  "Quel est ton moment préféré de la journée ?",
+  "Quel animal serais-tu ?",
+  "Quel est ton dessert préféré ?",
+  "Qu'est-ce qui te met de bonne humeur instantanément ?",
+  "Quel métier aurais-tu aimé faire, enfant ?",
+  "Quel est ton plus beau souvenir de vacances ?",
+  "Quelle est la chose que tu ne pourrais jamais manger ?",
+  "Quel est ton emoji le plus utilisé ?",
+];
+const isGuessDay = (day) => new Date(day + 'T12:00:00Z').getUTCDay() === 0;
+const guessFor = (day) => DEVINE[Math.floor(Date.parse(day) / 864e5 / 7) % DEVINE.length];
+
 const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const app = document.getElementById('app');
 const nav = document.querySelector('nav');
@@ -50,6 +71,7 @@ let user = null;      // utilisateur courant (anonyme ou relié par email)
 let view = 'jour';    // vue affichée : jour | souvenirs | nous
 let channel = null;   // canal Supabase Realtime
 let flashTimer = null;
+let stats = { streak: 0, best: 0, total: 0, today: false }; // série 🔥 et jours à deux (couple_stats)
 
 const here = location.origin + location.pathname; // où revenir après un lien reçu par email
 // Jour en heure de Paris au format AAAA-MM-JJ, comme la colonne "day" en base
@@ -123,6 +145,19 @@ const flashTitle = () => {
 };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && flashTimer) stopFlash(); });
 
+// Série et jours à deux, calculés par la base. Annonce les tenues débloquées depuis la dernière visite.
+async function loadStats() {
+  const { data } = await sb.rpc('couple_stats');
+  if (!data) return;
+  stats = data;
+  let vu = null;
+  try { vu = localStorage.getItem('sbm-jours'); localStorage.setItem('sbm-jours', stats.total); } catch { /* stockage indisponible */ }
+  if (vu === null) return;
+  for (const t of TENUES()) {
+    if (t.jours > +vu && t.jours <= stats.total) toast(`Nouvelle tenue débloquée : ${t.nom} ${t.icone}`);
+  }
+}
+
 // Quitter/dissoudre : couper le canal Realtime et repartir de zéro
 async function resetSession() {
   if (channel) { try { await sb.removeChannel(channel); } catch { /* canal déjà fermé */ } }
@@ -148,7 +183,7 @@ const route = () => {
   view = ['souvenirs', 'animal', 'nous'].includes(name) ? name : 'jour';
   setTabs(!!couple, view);
   if (view === 'souvenirs') return showSouvenirs();
-  if (view === 'animal') return showPet();
+  if (view === 'animal') return loadStats().then(showPet);
   if (view === 'nous') return showNous();
   return showToday();
 };
@@ -182,6 +217,11 @@ function listen(c) {
       alertes('Votre espace a été dissous');
       await resetSession();
       main();
+    })
+    // Mode devine : l'autre a donné son verdict sur ta devinette
+    .on('broadcast', { event: 'judged' }, ({ payload }) => {
+      toast(payload?.ok ? 'Ton/ta partenaire dit que tu as bien deviné 🎯' : 'Raté pour cette fois 😅 Regarde sa réponse !');
+      if (view === 'jour') showToday();
     })
     // "Je pense à toi" : bulle instantanée
     .on('broadcast', { event: 'nudge' }, () => alertes('Ton/ta partenaire pense à toi 💭'))
@@ -278,16 +318,35 @@ function showWaiting() {
 async function showToday() {
   if (!couple.b) return showWaiting();
   const today = todayParis();
+  const devine = isGuessDay(today);
   const dateLabel = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Paris' });
 
-  const { data: answers, error } = await sb.from('answers')
-    .select('user_id, question, text').eq('couple_id', couple.id).eq('day', today);
+  const [{ data: answers, error }] = await Promise.all([
+    sb.from('answers').select('user_id, question, text, guess, guess_ok').eq('couple_id', couple.id).eq('day', today),
+    loadStats(),
+  ]);
   if (error) return fail(error);
 
   const mine = answers.find((a) => a.user_id === user.id);
   const theirs = answers.find((a) => a.user_id !== user.id);
-  const question = mine?.question ?? questionFor(today);
-  const head = [h('p', { className: 'eyebrow' }, dateLabel), h('p', { className: 'question' }, question)];
+
+  // Question du jour : celle de ta réponse si tu as déjà répondu ; sinon dimanche → mode devine,
+  // sinon une de vos questions perso (tirée côté base, la même pour vous deux), sinon celle de l'app
+  let perso = null;
+  if (!mine && !devine) {
+    const { data } = await sb.rpc('todays_custom');
+    if (data?.text) perso = data;
+  }
+  const question = mine?.question ?? (devine ? guessFor(today) : perso?.text ?? questionFor(today));
+  const n = stats.streak;
+  const head = [
+    h('p', { className: 'eyebrow' }, dateLabel),
+    n > 0 && h('p', { className: 'streak' }, `🔥 ${n} jour${n > 1 ? 's' : ''} d’affilée`,
+      stats.today ? null : h('small', {}, 'Répondez tous les deux aujourd’hui pour la garder')),
+    (devine || mine?.guess) && h('p', { className: 'tag' }, mine ? '🎯 Mode devine' : '🎯 Mode devine : réponds pour toi, puis devine sa réponse'),
+    perso && h('p', { className: 'tag' }, perso.author === user.id ? '💌 Ta question' : '💌 Une question de ton/ta partenaire'),
+    h('p', { className: 'question' }, question),
+  ];
   const nudge = btn('Je pense à toi 💭', async () => {
     await channel.send({ type: 'broadcast', event: 'nudge', payload: {} });
     toast('Envoyé 💞');
@@ -295,11 +354,16 @@ async function showToday() {
 
   if (!mine) {
     const ta = h('textarea', { placeholder: 'Écris ta réponse…', maxLength: 2000, ariaLabel: 'Ta réponse' });
+    const devinette = devine && h('textarea', { placeholder: 'Et selon toi, que va répondre ton/ta partenaire ?', maxLength: 2000, ariaLabel: 'Ta devinette' });
     return show(card(
       ...head, ta,
+      devinette && [h('p', { className: 'label' }, '🎯 Ta devinette'), devinette],
       btn('Envoyer 💌', async () => {
         if (!ta.value.trim()) return ta.focus();
-        const { error } = await sb.from('answers').insert({ couple_id: couple.id, question, text: ta.value.trim() });
+        if (devinette && !devinette.value.trim()) return devinette.focus();
+        const { error } = await sb.from('answers').insert({
+          couple_id: couple.id, question, text: ta.value.trim(), guess: devinette ? devinette.value.trim() : null,
+        });
         if (error) return alert(error.message);
         channel.send({ type: 'broadcast', event: 'answered', payload: {} });
         showToday();
@@ -310,6 +374,15 @@ async function showToday() {
     ));
   }
 
+  // Mode devine : chacun dit si l'autre a bien deviné sa réponse
+  const verdict = (ok) => ok === true ? '🎯 Bien deviné !' : ok === false ? '😅 Raté' : '⏳ En attente de son verdict';
+  const juger = (ok) => async () => {
+    const { error } = await sb.rpc('judge_guess', { d: today, ok });
+    if (error) return alert(error.message);
+    channel.send({ type: 'broadcast', event: 'judged', payload: { ok } });
+    showToday();
+  };
+
   show(card(
     ...head,
     h('p', { className: 'label me' }, 'Toi'),
@@ -318,6 +391,19 @@ async function showToday() {
     theirs
       ? h('div', { className: 'bubble theirs' }, theirs.text)
       : h('div', { className: 'bubble locked' }, '⏳ Pas encore répondu…'),
+    theirs?.guess && h('div', { className: 'guess' },
+      h('p', { className: 'label' }, '🎯 Il/elle pensait que tu répondrais'),
+      h('div', { className: 'bubble theirs' }, theirs.guess),
+      theirs.guess_ok == null
+        ? [h('p', { className: 'hint center' }, 'A-t-il/elle bien deviné ?'),
+           h('div', { className: 'row' }, btn('🎯 Bien vu', juger(true)), btn('😅 Raté', juger(false), 'ghost'))]
+        : h('p', { className: 'verdict' }, verdict(theirs.guess_ok)),
+    ),
+    mine.guess && h('div', { className: 'guess' },
+      h('p', { className: 'label me' }, '🎯 Tu pensais qu’il/elle répondrait'),
+      h('div', { className: 'bubble mine' }, mine.guess),
+      theirs && h('p', { className: 'verdict me' }, verdict(mine.guess_ok)),
+    ),
     theirs
       ? h('p', { className: 'both' }, 'Vous avez répondu tous les deux 💞')
       : btn('Actualiser', showToday, 'ghost'),
@@ -328,9 +414,11 @@ async function showToday() {
 async function showSouvenirs() {
   // La RLS ne renvoie que les jours où tu as répondu : leur réponse d'un jour sans la tienne reste secrète
   // ponytail: 120 dernières réponses (~2 mois), pagination si l'historique grossit
-  const { data, error } = await sb.from('answers')
-    .select('user_id, day, question, text').eq('couple_id', couple.id)
-    .order('day', { ascending: false }).limit(120);
+  const [{ data, error }] = await Promise.all([
+    sb.from('answers').select('user_id, day, question, text, guess, guess_ok').eq('couple_id', couple.id)
+      .order('day', { ascending: false }).limit(120),
+    loadStats(),
+  ]);
   if (error) return fail(error);
 
   const days = [];
@@ -338,22 +426,41 @@ async function showSouvenirs() {
     let d = days.at(-1);
     if (!d || d.day !== row.day) { d = { day: row.day, question: null, mine: null, theirs: null }; days.push(d); }
     d.question ??= row.question;
-    if (row.user_id === user.id) d.mine = row.text; else d.theirs = row.text;
+    if (row.user_id === user.id) d.mine = row; else d.theirs = row;
   }
 
-  if (!days.length) return show(card(
+  // Score du mode devine : chacun marque quand l'autre valide sa devinette
+  const pts = (moi) => data.filter((r) => (r.user_id === user.id) === moi && r.guess_ok).length;
+  const moiPts = pts(true), luiPts = pts(false);
+  const stat = (icone, valeur, label) => h('div', { className: 'stat' }, h('strong', {}, `${icone} ${valeur}`), h('span', {}, label));
+  const resume = card(
+    h('p', { className: 'eyebrow' }, 'Nous deux'),
+    h('div', { className: 'stats' },
+      stat('🔥', stats.streak, 'jours d’affilée'),
+      stat('🏆', stats.best, 'record'),
+      stat('💞', stats.total, 'jours à deux'),
+    ),
+    (moiPts > 0 || luiPts > 0) && h('p', { className: 'hint center' }, `🎯 Mode devine : toi ${moiPts} · ton/ta partenaire ${luiPts}`),
+  );
+
+  if (!days.length) return show(resume, card(
     h('p', { className: 'eyebrow' }, 'Nos souvenirs'),
     h('p', { className: 'hint' }, 'Pas encore de souvenirs : réponds à la question du jour, ils apparaîtront ici.'),
   ));
 
-  show(...days.map((d) => card(
+  const devinette = (row, qui) => row?.guess && h('p', { className: 'guess-line' },
+    `🎯 ${qui} « ${row.guess} »`, row.guess_ok === true ? ' ✅' : row.guess_ok === false ? ' ❌' : '');
+
+  show(resume, ...days.map((d) => card(
     h('p', { className: 'eyebrow' }, new Date(d.day + 'T12:00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })),
     h('p', { className: 'question' }, d.question ?? questionFor(d.day)), // anciennes réponses sans question enregistrée
-    d.mine && [h('p', { className: 'label me' }, 'Toi'), h('div', { className: 'bubble mine' }, d.mine)],
+    d.mine && [h('p', { className: 'label me' }, 'Toi'), h('div', { className: 'bubble mine' }, d.mine.text)],
     h('p', { className: 'label' }, 'Ton/ta partenaire'),
     d.theirs
-      ? h('div', { className: 'bubble theirs' }, d.theirs)
+      ? h('div', { className: 'bubble theirs' }, d.theirs.text)
       : h('div', { className: 'bubble locked' }, 'Pas de réponse ce jour-là'),
+    devinette(d.mine, 'Tu pensais :'),
+    d.theirs && devinette(d.theirs, 'Il/elle pensait :'),
   )));
 }
 
@@ -383,65 +490,66 @@ const COULEURS = {
 };
 
 const pick = (obj, key) => (Object.hasOwn(obj, key ?? '') ? obj[key ?? ''] : null);
-const INK = '#3A2631';               // contours et traits du visage
+const INK = '#3A2631';
+const TENUES = () => [TETE, YEUX, CORPS].flatMap((liste) => Object.values(liste).filter(Boolean));               // contours et traits du visage
 const LINE = 'stroke="#3A263126" stroke-width="2.5"';
 
 // Tenues : une fonction par objet, qui renvoie le SVG à superposer (coordonnées du dessin 200×210)
 const TETE = {
   '': null,
-  'haut-de-forme': { icone: '🎩', nom: 'Haut-de-forme', svg: () => `<g transform="rotate(-8 100 40)">
+  'haut-de-forme': { icone: '🎩', jours: 14, nom: 'Haut-de-forme', svg: () => `<g transform="rotate(-8 100 40)">
     <ellipse cx="100" cy="42" rx="34" ry="7" fill="#2E2A36"/>
     <rect x="78" y="6" width="44" height="36" rx="5" fill="#2E2A36"/>
     <rect x="78" y="30" width="44" height="7" fill="#E5457E"/></g>` },
-  couronne: { icone: '👑', nom: 'Couronne', svg: () => `
+  couronne: { icone: '👑', jours: 30, nom: 'Couronne', svg: () => `
     <path d="M73 46 L75 16 L89 31 L100 10 L111 31 L125 16 L127 46 Z" fill="#FFC93C" stroke="#E2A400" stroke-width="2.5" stroke-linejoin="round"/>
     <circle cx="100" cy="36" r="4.5" fill="#E5457E"/><circle cx="84" cy="39" r="3" fill="#5AA9E6"/><circle cx="116" cy="39" r="3" fill="#5AA9E6"/>` },
-  casquette: { icone: '🧢', nom: 'Casquette', svg: () => `
+  casquette: { icone: '🧢', jours: 3, nom: 'Casquette', svg: () => `
     <path d="M56 50 Q58 12 100 11 Q142 12 144 50 Z" fill="#5AA9E6"/>
     <path d="M118 44 Q156 38 172 50 Q150 60 118 54 Z" fill="#3D8BD0"/>
     <circle cx="100" cy="12" r="5" fill="#3D8BD0"/>` },
-  bonnet: { icone: '🧶', nom: 'Bonnet', svg: () => `
+  bonnet: { icone: '🧶', jours: 7, nom: 'Bonnet', svg: () => `
     <path d="M54 54 Q56 8 100 8 Q144 8 146 54 Z" fill="#F36B9A"/>
     <rect x="50" y="44" width="100" height="15" rx="7.5" fill="#D9487A"/>
     <circle cx="100" cy="8" r="11" fill="#FFF"/>` },
-  noeud: { icone: '🎀', nom: 'Nœud', svg: () => `<g transform="rotate(18 140 34)">
+  noeud: { icone: '🎀', jours: 0, nom: 'Nœud', svg: () => `<g transform="rotate(18 140 34)">
     <path d="M140 34 L118 20 Q112 34 118 48 Z M140 34 L162 20 Q168 34 162 48 Z" fill="#FF7AAB"/>
     <circle cx="140" cy="34" r="7" fill="#E5457E"/></g>` },
-  fleur: { icone: '🌸', nom: 'Fleur', svg: () => `<g transform="translate(60 40)">
+  fleur: { icone: '🌸', jours: 0, nom: 'Fleur', svg: () => `<g transform="translate(60 40)">
     ${[0, 72, 144, 216, 288].map((a) => `<ellipse cx="0" cy="-10" rx="7" ry="10" fill="#FFB3CF" transform="rotate(${a})"/>`).join('')}
     <circle r="6" fill="#FFD84D"/></g>` },
-  aureole: { icone: '😇', nom: 'Auréole', svg: () => `
+  aureole: { icone: '😇', jours: 60, nom: 'Auréole', svg: () => `
     <ellipse cx="100" cy="14" rx="30" ry="8" fill="none" stroke="#FFD84D" stroke-width="6"/>` },
 };
 const YEUX = {
   '': null,
-  rondes: { icone: '👓', nom: 'Lunettes', svg: () => `<g fill="#FFFFFF40" stroke="${INK}" stroke-width="3.5">
+  rondes: { icone: '👓', jours: 0, nom: 'Lunettes', svg: () => `<g fill="#FFFFFF40" stroke="${INK}" stroke-width="3.5">
     <circle cx="78" cy="90" r="15"/><circle cx="122" cy="90" r="15"/><path d="M93 89 Q100 84 107 89" fill="none"/></g>` },
-  soleil: { icone: '🕶️', nom: 'Soleil', svg: () => `<g fill="#26232E">
+  soleil: { icone: '🕶️', jours: 5, nom: 'Lunettes de soleil', svg: () => `<g fill="#26232E">
     <rect x="61" y="80" width="33" height="22" rx="10"/><rect x="106" y="80" width="33" height="22" rx="10"/>
     <rect x="92" y="84" width="16" height="4" rx="2"/>
     <path d="M66 86 L74 84" stroke="#FFFFFF80" stroke-width="3" stroke-linecap="round"/><path d="M111 86 L119 84" stroke="#FFFFFF80" stroke-width="3" stroke-linecap="round"/></g>` },
-  coeur: { icone: '💖', nom: 'Cœurs', svg: () => ['78', '122'].map((x) => `
+  coeur: { icone: '💖', jours: 21, nom: 'Cœurs', svg: () => ['78', '122'].map((x) => `
     <path transform="translate(${x} 82) scale(1.35)" d="M0 4 C0 -3 -10 -4 -11 3 C-12 9 0 14 0 17 C0 14 12 9 11 3 C10 -4 0 -3 0 4 Z" fill="#FF5C93" stroke="${INK}" stroke-width="2"/>`).join('')
     + `<path d="M92 88 L108 88" stroke="${INK}" stroke-width="3"/>` },
 };
 const CORPS = {
   '': null,
-  echarpe: { icone: '🧣', nom: 'Écharpe', svg: () => `
+  echarpe: { icone: '🧣', jours: 0, nom: 'Écharpe', svg: () => `
     <path d="M58 122 Q100 140 142 122 L144 135 Q100 153 56 135 Z" fill="#E5457E"/>
     <g transform="rotate(-8 118 132)"><rect x="110" y="130" width="16" height="36" rx="5" fill="#D13A70"/>
     <path d="M110 150 H126 M110 158 H126" stroke="#FFFFFF90" stroke-width="3"/></g>` },
-  papillon: { icone: '🎗️', nom: 'Nœud pap', svg: () => `
+  papillon: { icone: '🎗️', jours: 10, nom: 'Nœud pap', svg: () => `
     <path d="M100 128 L80 118 L82 140 Z M100 128 L120 118 L118 140 Z" fill="#C2255C"/>
     <circle cx="100" cy="129" r="6" fill="#9E1C49"/>` },
-  bandana: { icone: '🔷', nom: 'Bandana', svg: () => `
+  bandana: { icone: '🔷', jours: 2, nom: 'Bandana', svg: () => `
     <path d="M62 122 Q100 136 138 122 L100 164 Z" fill="#5AA9E6"/>
     <circle cx="92" cy="134" r="3" fill="#fff"/><circle cx="108" cy="134" r="3" fill="#fff"/><circle cx="100" cy="147" r="3" fill="#fff"/>` },
-  pull: { icone: '🧥', nom: 'Pull', svg: () => `
+  pull: { icone: '🧥', jours: 14, nom: 'Pull', svg: () => `
     <path d="M58 132 Q62 118 100 118 Q138 118 142 132 L147 162 Q100 192 53 162 Z" fill="#7FB7E8"/>
     <path d="M56 148 Q100 164 144 148" fill="none" stroke="#FFFFFF" stroke-width="5"/>
     <path d="M70 120 Q100 132 130 120" fill="none" stroke="#5E98CF" stroke-width="7" stroke-linecap="round"/>` },
-  cape: { icone: '🦸', nom: 'Cape', derriere: true, svg: () => `
+  cape: { icone: '🦸', jours: 45, nom: 'Cape', derriere: true, svg: () => `
     <path d="M62 124 Q34 178 54 198 L146 198 Q166 178 138 124 Z" fill="#C2255C"/>
     <path d="M62 124 Q34 178 54 198 L70 198 Q56 170 74 128 Z" fill="#9E1C49"/>` },
 };
@@ -600,11 +708,21 @@ function showPet() {
   const moi = compte(user.id), lui = compte(partner);
 
   const chip = (content, on, fn, ariaLabel) => Object.assign(btn(content, fn, 'chip'), { ariaPressed: String(on), ariaLabel });
+  // Tenues à gagner : chaque jour où vous répondez tous les deux rapproche de la suivante
   const rangée = (titre, liste, cle) => [
     h('p', { className: 'label' }, titre),
-    h('div', { className: 'chips' }, Object.entries(liste).map(([id, o]) =>
-      chip(o ? o.icone : '🚫', (st[cle] ?? '') === id, () => petAct(cle, id), o ? o.nom : 'Rien'))),
+    h('div', { className: 'chips' }, Object.entries(liste).map(([id, o]) => {
+      if (o && o.jours > stats.total) {
+        const b = chip(o.icone, (st[cle] ?? '') === id,
+          () => toast(`${o.nom} ${o.icone} : à débloquer après ${o.jours} jours à deux (vous en êtes à ${stats.total})`),
+          `${o.nom}, verrouillé : ${o.jours} jours à deux`);
+        b.classList.add('locked');
+        return b;
+      }
+      return chip(o ? o.icone : '🚫', (st[cle] ?? '') === id, () => petAct(cle, id), o ? o.nom : 'Rien');
+    })),
   ];
+  const prochaine = TENUES().filter((t) => t.jours > stats.total).sort((x, y) => x.jours - y.jours)[0];
   const nom = h('input', { value: couple.pet_name, maxLength: 20, ariaLabel: 'Nom de votre compagnon' });
 
   show(
@@ -636,6 +754,10 @@ function showPet() {
     ),
     card(
       h('p', { className: 'eyebrow' }, 'Habiller'),
+      h('p', { className: 'hint' }, `💞 ${stats.total} jour${stats.total > 1 ? 's' : ''} à deux`,
+        prochaine
+          ? ` · prochaine tenue : ${prochaine.nom} ${prochaine.icone} dans ${prochaine.jours - stats.total} jour${prochaine.jours - stats.total > 1 ? 's' : ''}`
+          : ' · toutes les tenues sont débloquées ✨'),
       ...rangée('Tête', TETE, 'hat'),
       ...rangée('Yeux', YEUX, 'eyes'),
       ...rangée('Corps', CORPS, 'body'),
@@ -659,8 +781,12 @@ function showPet() {
   );
 }
 
-function showNous() {
+async function showNous() {
   const cards = [];
+  const [{ data: miennes }, { data: attente }] = await Promise.all([
+    sb.from('custom_questions').select('id, text').eq('author', user.id).is('used_on', null).order('created_at'),
+    sb.rpc('pending_questions'),
+  ]);
 
   // Notre espace
   cards.push(card(
@@ -704,9 +830,37 @@ function showNous() {
     }),
   ));
 
+  // Vos propres questions : elles passent avant celles de l'app, une par jour (sauf le dimanche)
+  const nouvelle = h('textarea', { placeholder: 'Ex. : Quel est le moment où tu t’es senti·e le plus proche de moi ?', maxLength: 300, rows: 2, ariaLabel: 'Nouvelle question' });
+  const autres = attente?.theirs ?? 0;
+  cards.push(card(
+    h('p', { className: 'eyebrow' }, 'Nos questions 💌'),
+    h('p', { className: 'hint' }, 'Écris des questions pour vous deux : elles tombent une par jour, avant celles de l’app. Celles de ton/ta partenaire restent une surprise.'),
+    autres > 0 && h('p', { className: 'hint' }, `🎁 ${autres} question${autres > 1 ? 's' : ''} de ton/ta partenaire en attente`),
+    nouvelle,
+    btn('Ajouter la question', async () => {
+      const text = nouvelle.value.trim();
+      if (text.length < 3) return nouvelle.focus();
+      const { error } = await sb.from('custom_questions').insert({ couple_id: couple.id, text });
+      if (error) return alert(error.message);
+      toast('Question ajoutée 💌');
+      showNous();
+    }),
+    (miennes ?? []).length > 0 && [
+      h('p', { className: 'label' }, 'Tes questions en attente'),
+      h('ul', { className: 'qlist' }, miennes.map((q) => h('li', {},
+        h('span', {}, q.text),
+        btn('✕', async () => {
+          await sb.from('custom_questions').delete().eq('id', q.id);
+          showNous();
+        }, 'ghost x'),
+      ))),
+    ],
+  ));
+
   cards.push(card(
     h('p', { className: 'eyebrow' }, 'Bientôt'),
-    h('p', { className: 'hint' }, 'Questions personnalisées · Petites statistiques douces · Lettres à ouvrir plus tard…'),
+    h('p', { className: 'hint' }, 'Lettres à ouvrir plus tard · Petites statistiques douces…'),
   ));
 
   // Quitter : l'espace reste à l'autre ; Dissoudre : tout est supprimé
